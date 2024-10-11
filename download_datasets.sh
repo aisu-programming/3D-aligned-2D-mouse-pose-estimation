@@ -13,7 +13,7 @@ echo "Downloading..."
 gdown https://drive.google.com/uc?id=${FILE_ID} -O ${FILE_NAME}
 
 echo "Unzip..."
-unzip ${FILE_NAME} -d datasets/MARS/raw_images_front
+unzip ${FILE_NAME} -d datasets/MARS
 
 rm ${FILE_NAME}
 

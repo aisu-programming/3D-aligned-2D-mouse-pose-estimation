@@ -5,3 +5,4 @@ mambaforge
 datasets/MARS/raw_images_front
 results
 *.pyc
+wandb

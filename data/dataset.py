@@ -60,7 +60,6 @@ class Pad:
 
         return {"image": image, "keypoints": keypoints}
 
-
 class RandomHorizontalFlip:
     def __init__(self, p=0.5, img_width=640):
         self.p = p
@@ -73,7 +72,6 @@ class RandomHorizontalFlip:
             keypoints[:, 0] = self.img_width - keypoints[:, 0]
         return {"image": image, "keypoints": keypoints}
 
-
 class ToTensor:
     def __call__(self, sample):
         image, keypoints = sample["image"], sample["keypoints"]
@@ -82,13 +80,12 @@ class ToTensor:
         keypoints = torch.from_numpy(keypoints).float()
         return {"image": image, "keypoints": keypoints}
 
-
 class CocoKeypointsDataset(Dataset):
     def __init__(self, img_dir, ann_file, transform=None):
         self.coco = COCO(ann_file)
         self.img_dir = img_dir
         self.transform = transform
-        self.img_ids = list(self.coco.imgs.keys())[:500]
+        self.img_ids = list(self.coco.imgs.keys())[:1500]
 
     def __len__(self):
         return len(self.img_ids)

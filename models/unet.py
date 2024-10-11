@@ -44,7 +44,7 @@ class UpBlock(nn.Module):
         return x
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, base_filters=32, num_layers=6, expand_factor=1.5, num_groups=8, dropout_prob=0.1):
+    def __init__(self, n_channels, n_classes, base_filters, num_layers, expand_factor, num_groups, dropout_prob):
         super(UNet, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes

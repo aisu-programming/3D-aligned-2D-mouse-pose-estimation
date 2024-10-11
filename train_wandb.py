@@ -18,25 +18,34 @@ sweep_config = {
     },
     'parameters': {
         'learning_rate': {
-            'values': {'distribution': 'uniform', 'min': 1e-4, 'max': 1e-2},
+            'distribution': 'uniform', 'min': 1e-4, 'max': 1e-2
+        },
+        'gamma': {
+            'distribution': 'uniform', 'min': 0.99, 'max': 0.9999
         },
         'batch_size': {
             'values': [ 8, 16, 32, 64 ]
         },
-        'num_epochs': {
-            'value': 100
+        'base_filters': {
+            'values': [ 16, 24, 32, 48, 64 ]
         },
-        'dropout_prob': {
-            'values': [ 0.1, 0.2, 0.3 ]
+        'num_layers': {
+            'values': [ 3, 4, 5, 6, 7 ]
+        },
+        'expand_factor': {
+            'values': [ 1.5, 2, 2.5 ]
+        },
+        'num_epochs': {
+            'value': 50
         },
         'num_groups': {
             'values': [ 4, 8, 16 ]
         },
+        'dropout_prob': {
+            'values': [ 0.1, 0.2, 0.3 ]
+        },
         "sigma": {
             "values": [ 3, 5, 10, 15 ]
-        },
-        "gamma": {
-            'values': {'distribution': 'uniform', 'min': 0.99, 'max': 0.9999},
         }
     }
 }
@@ -70,11 +79,15 @@ def train(config=None):
         train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=config.batch_size * 2, shuffle=False)
 
-        model = UNet(n_channels=1, n_classes=18, dropout_prob=config.dropout_prob,
-                                                 num_groups=config.num_groups).to(device)
+        model = UNet(n_channels=1, n_classes=18,
+                     base_filters=config.base_filters,
+                     num_layers=config.num_layers,
+                     expand_factor=config.expand_factor,
+                     num_groups=config.num_groups,
+                     dropout_prob=config.dropout_prob).to(device)
         criterion = torch.nn.MSELoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-        lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.999)
+        lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=config.gamma)
 
         num_epochs = config.num_epochs
 
@@ -115,6 +128,7 @@ def train(config=None):
                 'learning_rate': get_lr(optimizer)
             })
 
-            print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.8f}, Validation Loss: {avg_val_loss:.8f}, LR: {optimizer.param_groups[0]['lr']:.10f}")
+            print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.8f}, " + \
+                  f"Validation Loss: {avg_val_loss:.8f}, LR: {optimizer.param_groups[0]['lr']:.10f}")
 
 wandb.agent(sweep_id, function=train)
