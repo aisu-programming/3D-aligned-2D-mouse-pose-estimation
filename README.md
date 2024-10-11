@@ -18,7 +18,7 @@ Use _train.py_ to train a Scalable UNet, or use _train\_wandb.py_ to do auto hyp
 
 ## Memo
 
-Now using only 1500 images from MARS for training/validation, this can be adjust at _data/dataset.py:88_.
+Now using only 500 images from MARS for training/validation, this can be adjust at _data/dataset.py:88_.
 
 ## (Deprecated) Memo for SLEAP
 

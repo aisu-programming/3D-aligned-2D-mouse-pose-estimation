@@ -73,8 +73,8 @@ def visualize_peaks(image: torch.Tensor, heatmaps: torch.Tensor, threshold=0.1, 
         y, x = np.unravel_index(np.argmax(heatmap), heatmap.shape)
         max_value = heatmap[y, x]
         if max_value > threshold:
-            ax.plot(x, y, "ro")
-            ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=6)
+            ax.plot(x, y, "ro", markersize=3)
+            ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=4)
     
     plt.axis("off")
     if save_path:

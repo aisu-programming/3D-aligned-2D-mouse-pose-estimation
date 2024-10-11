@@ -85,7 +85,7 @@ class CocoKeypointsDataset(Dataset):
         self.coco = COCO(ann_file)
         self.img_dir = img_dir
         self.transform = transform
-        self.img_ids = list(self.coco.imgs.keys())[:1500]
+        self.img_ids = list(self.coco.imgs.keys())[:500]
 
     def __len__(self):
         return len(self.img_ids)
