@@ -21,7 +21,7 @@ sweep_config = {
             'distribution': 'uniform', 'min': 1e-4, 'max': 1e-2
         },
         'gamma': {
-            'distribution': 'uniform', 'min': 0.99, 'max': 0.9999
+            'distribution': 'uniform', 'min': 0.998, 'max': 0.9999
         },
         'batch_size': {
             'values': [ 8, 16, 32, 64 ]
@@ -30,13 +30,13 @@ sweep_config = {
             'values': [ 16, 24, 32, 48, 64 ]
         },
         'num_layers': {
-            'values': [ 3, 4, 5, 6, 7 ]
+            'values': [ 4, 5, 6 ]
         },
         'expand_factor': {
             'values': [ 1.5, 2, 2.5 ]
         },
         'num_epochs': {
-            'value': 50
+            'value': 30
         },
         'num_groups': {
             'values': [ 4, 8, 16 ]
@@ -90,7 +90,6 @@ def train(config=None):
         lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=config.gamma)
 
         num_epochs = config.num_epochs
-
         for epoch in range(num_epochs):
             model.train()
             train_losses = []
@@ -99,7 +98,7 @@ def train(config=None):
                 keypoints = batch["keypoints"].to(device)
                 outputs = model(images)
                 keypoints_heatmaps = generate_heatmaps(keypoints, heatmap_size=outputs.shape[2:], sigma=config.sigma)
-                loss = criterion(outputs, keypoints_heatmaps)
+                loss: torch.Tensor = criterion(outputs, keypoints_heatmaps)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -130,5 +129,9 @@ def train(config=None):
 
             print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.8f}, " + \
                   f"Validation Loss: {avg_val_loss:.8f}, LR: {optimizer.param_groups[0]['lr']:.10f}")
+            
+            if epoch == 5:
+                if avg_val_loss > 0.001:
+                    break
 
 wandb.agent(sweep_id, function=train)

@@ -3,9 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ConvBlock(nn.Module):
-    """
-    卷积块：Conv2d -> GroupNorm -> ReLU -> Dropout
-    """
     def __init__(self, in_channels, out_channels, num_groups=8, dropout_prob=0.1):
         super(ConvBlock, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
@@ -21,9 +18,6 @@ class ConvBlock(nn.Module):
         return x
 
 class UpBlock(nn.Module):
-    """
-    上采样块：Upsample -> ConvBlock
-    """
     def __init__(self, in_channels, out_channels, num_groups=8, dropout_prob=0.1):
         super(UpBlock, self).__init__()
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
@@ -34,7 +28,6 @@ class UpBlock(nn.Module):
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
-        # 确保尺寸匹配
         diffY = x2.size()[2] - x1.size()[2]
         diffX = x2.size()[3] - x1.size()[3]
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
@@ -76,20 +69,16 @@ class UNet(nn.Module):
         self.out_conv = nn.Conv2d(filters[0], n_classes, kernel_size=1)
 
     def forward(self, x):
-        # 编码器路径
         enc_features = []
         for enc in self.encoder:
             x = enc(x)
             enc_features.append(x)
             x = self.pool(x)
 
-        # 最后一层编码器的输出
         x = enc_features[-1]
 
-        # 解码器路径
         for idx, up in enumerate(self.up_blocks):
             x = up(x, enc_features[-(idx+2)])
 
-        # 输出层
         logits = self.out_conv(x)
         return logits
