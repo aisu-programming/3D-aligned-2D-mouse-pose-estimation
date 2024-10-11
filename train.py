@@ -10,15 +10,15 @@ from torch.utils.data import random_split, DataLoader
 
 
 
-base_filters = 32
+base_filters = 64
 batch_size = 16
 dropout_prob = 0.1
-expand_factor = 2
-gamma = 0.9994
-learning_rate = 0.0016
-num_groups = 4
-num_layers = 5
-sigma = 10
+expand_factor = 2.5
+gamma = 0.99925
+learning_rate = 0.0011
+num_groups = 16
+num_layers = 6
+sigma = 5
 
 
 
@@ -54,7 +54,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
 
 os.makedirs("results", exist_ok=True)
-num_epochs = 300
+num_epochs = 500
 for epoch in range(num_epochs):
     model.train()
     train_losses = []
