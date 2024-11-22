@@ -1,0 +1,6 @@
+train: /Users/dahye/PycharmProjects/CLIP-pose-estimation/Localization/YOLO/dataset/images/train
+val: /Users/dahye/PycharmProjects/CLIP-pose-estimation/Localization/YOLO/dataset/images/val
+
+nc: 2  # Number of classes (black and white mouse)
+names: ['black', 'white']
+
