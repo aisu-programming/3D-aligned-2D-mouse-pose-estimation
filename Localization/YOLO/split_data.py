@@ -63,11 +63,11 @@ val_images = images[split_index:]
 def move_files(image_list, src_image_dir, src_label_dir, dest_image_dir, dest_label_dir):
     for image in image_list:
         # Image file
-        shutil.copy(os.path.join(src_image_dir, image), os.path.join(dest_image_dir, image))
+        shutil.move(os.path.join(src_image_dir, image), os.path.join(dest_image_dir, image))
 
         # Label file (assuming the label file has the same name as the image but with .txt extension)
         label_file = os.path.splitext(image)[0] + ".txt"
-        shutil.copy(os.path.join(src_label_dir, label_file), os.path.join(dest_label_dir, label_file))
+        shutil.move(os.path.join(src_label_dir, label_file), os.path.join(dest_label_dir, label_file))
 
 
 # Move train files

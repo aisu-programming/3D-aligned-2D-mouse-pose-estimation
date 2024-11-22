@@ -39,11 +39,6 @@ def compute_bounding_box(coords, margin, img_width, img_height):
     return x_center, y_center, width, height
 
 
-# 1. Output directories
-os.makedirs("Localization/YOLO/dataset/labels/train", exist_ok=True)
-os.makedirs("Localization/YOLO/dataset/images/train", exist_ok=True)
-
-
 json_paths = {TOP: "datasets/MARS/MARS_keypoints_top.json", FRONT: "datasets/MARS/MARS_front_raw.json"}
 for view_type in [TOP, FRONT]:
     # 2. Load JSON data
