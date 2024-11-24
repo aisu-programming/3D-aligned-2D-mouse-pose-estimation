@@ -13,13 +13,13 @@ from tqdm import tqdm
 # Configuration Parameters
 # ===========================
 # Number of images to use for training (set to None to use all)
-NUM_TRAIN_IMAGES = 50  # e.g., 1000
+NUM_TRAIN_IMAGES = 150  # e.g., 1000
 
 # Batch size for training
 BATCH_SIZE = 4
 
 # Number of epochs
-NUM_EPOCHS = 3
+NUM_EPOCHS = 5
 
 # Learning rate
 LEARNING_RATE = 0.005
@@ -33,6 +33,21 @@ IMAGES_DIR = os.path.join(DATASET_DIR, 'images')
 LABELS_DIR = os.path.join(DATASET_DIR, 'labels')
 OUTPUT_DIR = os.path.join('..', 'output')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# ===========================
+# Class Definitions
+# ===========================
+
+# Define a mapping from original class IDs to model class IDs
+# Original classes: 0 and 1
+# Model expects classes: 1 and 2
+CLASS_ID_OFFSET = 1  # Shift class IDs by 1
+
+# Optional: Define class names for visualization
+CLASS_NAMES = {
+    1: 'Class 0',  # Original class 0
+    2: 'Class 1',  # Original class 1
+}
 
 # ===========================
 # Custom Dataset Class
@@ -67,7 +82,9 @@ class LocalizationDataset(Dataset):
         with open(label_path, 'r') as f:
             for line in f:
                 parts = line.strip().split()
-                class_id = int(parts[0])
+                original_class_id = int(parts[0])
+                class_id = original_class_id + CLASS_ID_OFFSET  # Shift class ID
+
                 x_center = float(parts[1])
                 y_center = float(parts[2])
                 width = float(parts[3])
@@ -98,34 +115,37 @@ def visualize_predictions(image, ground_truth, predictions, output_path):
     """
     Visualize ground truth and predicted bounding boxes on the image and save it.
     """
-    fig, ax = plt.subplots(1)
+    fig, ax = plt.subplots(1, figsize=(12, 8))
     # Convert tensor to PIL Image
-    image = image.permute(1, 2, 0).cpu().numpy()
+    image = image.permute(1, 2, 0).numpy()
     ax.imshow(image)
 
-    # Plot ground truth boxes in green
-    for box in ground_truth['boxes']:
+    # Plot ground truth boxes
+    for box, label in zip(ground_truth['boxes'], ground_truth['labels']):
         xmin, ymin, xmax, ymax = box
-        rect = patches.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
-                                 linewidth=2, edgecolor='g', facecolor='none', label='Ground Truth')
+        width = xmax - xmin
+        height = ymax - ymin
+        class_name = CLASS_NAMES.get(label.item(), f"Class {label.item()}")
+        rect = patches.Rectangle((xmin, ymin), width, height,
+                                 linewidth=2, edgecolor='g', facecolor='none')
         ax.add_patch(rect)
+        ax.text(xmin, ymin, f"GT: {class_name}", fontsize=12, color='g', verticalalignment='top')
 
-    # Plot predicted boxes in red
-    for box, score in zip(predictions['boxes'], predictions['scores']):
+    # Plot predicted boxes
+    for box, label, score in zip(predictions['boxes'], predictions['labels'], predictions['scores']):
         if score >= 0.5:  # Threshold for visualization
-            
             xmin, ymin, xmax, ymax = box
-            print("Predicted: ", xmin, ymin, xmax, ymax)
-            rect = patches.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
-                                     linewidth=2, edgecolor='r', facecolor='none', label='Prediction')
+            width = xmax - xmin
+            height = ymax - ymin
+            class_name = CLASS_NAMES.get(label.item(), f"Class {label.item()}")
+            rect = patches.Rectangle((xmin, ymin), width, height,
+                                     linewidth=2, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
-
-    # Avoid duplicate labels in legend
-    handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax.legend(by_label.values(), by_label.keys())
+            ax.text(xmin, ymin - 10, f"Pred: {class_name} ({score:.2f})", fontsize=12, color='r',
+                    verticalalignment='top')
 
     plt.axis('off')
+    plt.tight_layout()
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
@@ -145,9 +165,10 @@ def main():
     # Initialize the model
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
 
-    # Number of classes (assuming class IDs start at 0)
-    num_classes = max([int(line.split()[0]) for label_file in os.listdir(LABELS_DIR) if label_file.endswith('.txt')
-                       for line in open(os.path.join(LABELS_DIR, label_file))]) + 1
+    # Determine the number of classes
+    # Original class IDs: 0 and 1
+    # After shifting: 1 and 2
+    num_classes = 3  # 2 classes + background
 
     # Replace the classifier with a new one, that has num_classes which is user-defined
     in_features = model.roi_heads.box_predictor.cls_score.in_features
