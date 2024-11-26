@@ -33,8 +33,21 @@ def paste_on_black_canvas(cropped_image, max_width, max_height):
     black_canvas[y_offset:y_offset + h, x_offset:x_offset + w] = cropped_image
     return black_canvas
 
-# Function to crop, draw bounding boxes, and save images
-def crop_and_draw(image_path, output_folder, bboxes, class_mapping, max_width, max_height):
+# Function to adjust keypoints for placement on the black canvas
+def adjust_keypoints(keypoints, x_offset, y_offset):
+    adjusted_keypoints = {"x": [], "y": []}
+    for x, y in zip(keypoints["x"], keypoints["y"]):
+        adjusted_keypoints["x"].append(x + x_offset)
+        adjusted_keypoints["y"].append(y + y_offset)
+    return adjusted_keypoints
+
+# Function to draw keypoints on an image
+def draw_keypoints(image, keypoints, color=(0, 255, 0), radius=3, thickness=-1):
+    for x, y in zip(keypoints["x"], keypoints["y"]):
+        cv2.circle(image, (int(x), int(y)), radius, color, thickness)
+
+
+def crop_and_draw(image_path, output_folder, bboxes, class_mapping, max_width, max_height, coords):
     original_image = cv2.imread(image_path)
     if original_image is None:
         raise FileNotFoundError(f"Image {image_path} not found!")
@@ -44,6 +57,8 @@ def crop_and_draw(image_path, output_folder, bboxes, class_mapping, max_width, m
 
     # Ensure the output folder exists
     os.makedirs(output_folder, exist_ok=True)
+
+    adjusted_keypoints = {}  # To store adjusted keypoints for each class
 
     for bbox, class_id in bboxes:
         x_min, y_min, x_max, y_max = bbox
@@ -60,14 +75,39 @@ def crop_and_draw(image_path, output_folder, bboxes, class_mapping, max_width, m
         # Paste cropped image onto a black canvas
         padded_image = paste_on_black_canvas(cropped_image, max_width, max_height)
 
-        # Save the padded image
-        cropped_filename = os.path.join(output_folder, f"{label}.jpg")
-        cv2.imwrite(cropped_filename, padded_image)
+        # Save the canvas-pasted image without keypoints
+        cropped_filename_without_keypoints = os.path.join(output_folder, f"{label}.jpg")
+        cv2.imwrite(cropped_filename_without_keypoints, padded_image)
+
+        # Calculate offsets for keypoint adjustment
+        h, w, _ = cropped_image.shape
+        y_offset = (max_height - h) // 2 - y_min
+        x_offset = (max_width - w) // 2 - x_min
+
+        # Adjust keypoints for the current class
+        adjusted_keypoints[label] = adjust_keypoints(coords[label], x_offset, y_offset)
+        
+        ''' if you want to also save the cropped images with adjusted keypoints, uncomment these lines
+        
+        # Draw adjusted keypoints on the black canvas image
+        draw_keypoints(padded_image, adjusted_keypoints[label])
+
+        # Save the canvas-pasted image with keypoints
+        cropped_filename_with_keypoints = os.path.join(output_folder, f"{label}_with_keypoints.jpg")
+        cv2.imwrite(cropped_filename_with_keypoints, padded_image)
+        
+        '''
+
+    # Save the adjusted keypoints
+    keypoints_filename = os.path.join(output_folder, "adjusted_keypoints.json")
+    with open(keypoints_filename, "w") as kp_file:
+        json.dump(adjusted_keypoints, kp_file, indent=4)
 
     # Save the image with bounding boxes
     output_image_path = os.path.join(output_folder, f"{os.path.basename(image_path)}")
     cv2.imwrite(output_image_path, image_with_bbox)
 
+    
 # Process each dataset
 json_paths = {TOP: "MARS_keypoints_top.json", FRONT: "MARS_keypoints_front.json"}
 original_path = {TOP: "raw_images_top", FRONT: "raw_images_front"}
@@ -82,7 +122,6 @@ for view_type in [TOP, FRONT]:
     max_width, max_height = 0, 0  # Track the maximum dimensions
 
     # First pass: calculate maximum width and height
-   # First pass: calculate maximum width and height
     max_width_info = {"image": None, "type": None}
     max_height_info = {"image": None, "type": None}
 
@@ -114,7 +153,6 @@ for view_type in [TOP, FRONT]:
     print(f"Maximum bounding box width: {max_width}px, found in image: {max_width_info['image']} ({max_width_info['type']})")
     print(f"Maximum bounding box height: {max_height}px, found in image: {max_height_info['image']} ({max_height_info['type']})")
 
-
     # Second pass: process images
     for idx, entry in enumerate(dataset, start=1):
         image_name = entry["filename"]
@@ -132,10 +170,10 @@ for view_type in [TOP, FRONT]:
 
         # Define paths
         source_image_path = f"{original_path[view_type]}/{original_path[view_type]}/{image_name}"
-        cropped_image_folder = f"Localization/cropped_images/{os.path.splitext(image_name)[0]}"
+        cropped_image_folder = f"Localization/Ground/{os.path.splitext(image_name)[0]}"
 
-        # Crop and save images
-        crop_and_draw(source_image_path, cropped_image_folder, bboxes, CLASS_MAPPING, max_width, max_height)
+        # Crop and save images with adjusted keypoints
+        crop_and_draw(source_image_path, cropped_image_folder, bboxes, CLASS_MAPPING, max_width, max_height, coords)
 
         # Print progress
         progress = (idx / total_files) * 100
