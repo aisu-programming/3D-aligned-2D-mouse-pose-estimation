@@ -92,11 +92,18 @@ def draw_bounding_boxes(image, bboxes):
 
 # this is for the keypoint ####
 def adjust_keypoints(keypoints, x_offset, y_offset):
+<<<<<<< HEAD
         
     adjusted_keypoints = {"x": [], "y": []}
     for x, y in zip(keypoints["x"], keypoints["y"]):
         adjusted_keypoints["x"].append(x + x_offset)
         adjusted_keypoints["y"].append(y + y_offset)
+=======
+    adjusted_keypoints = {"x": [], "y": []}
+    for x, y in zip(keypoints["x"], keypoints["y"]):
+        adjusted_keypoints["x"].append(x - x_offset)  # Adjust by subtracting x_offset
+        adjusted_keypoints["y"].append(y - y_offset)  # Adjust by subtracting y_offset
+>>>>>>> a59784b086d12f0ab1b44bc56a107e26833d62b5
     return adjusted_keypoints
 
 # Function to draw keypoints on an image
@@ -164,8 +171,11 @@ for view_type in [FRONT, TOP]:
 
         coords= entry ["coords"]
         
+<<<<<<< HEAD
         #print(coords)
         
+=======
+>>>>>>> a59784b086d12f0ab1b44bc56a107e26833d62b5
         if not os.path.exists(img_path) or not os.path.exists(yolo_file):
             continue
 
@@ -187,9 +197,12 @@ for view_type in [FRONT, TOP]:
 
         # Create and save images with black canvas
         for (bbox, class_id) in bboxes:
+<<<<<<< HEAD
             x_min, y_min, x_max, y_max = bbox
             width = x_max - x_min
             height = y_max - y_min
+=======
+>>>>>>> a59784b086d12f0ab1b44bc56a107e26833d62b5
             class_name = ""
             cropped_image = crop_object_from_image(original_image, bbox)
             if cropped_image is not None:
@@ -216,6 +229,7 @@ for view_type in [FRONT, TOP]:
                 x_offset = (max_width - w) // 2 - x_min  # x_min is the original image x_min of the bbox
 
                 # Adjust keypoints for the current class
+<<<<<<< HEAD
                 #print (class_name)
                 #print (coords[class_name])
                 adjusted_keypoints[class_name] = adjust_keypoints(coords[class_name], x_offset, y_offset)
@@ -234,6 +248,22 @@ for view_type in [FRONT, TOP]:
                 keypoints_filename = os.path.join(output_folder, "adjusted_keypoints.json")
                 with open(keypoints_filename, "w") as kp_file:
                     json.dump(adjusted_keypoints, kp_file, indent=4)
+=======
+                adjusted_keypoints[class_name] = adjust_keypoints(coords[class_name], x_offset, y_offset)
+                
+                # Draw adjusted keypoints on the black canvas image
+                # raw_keypoints(canvas, adjusted_keypoints[class_name])
+
+                # Save the canvas-pasted image with keypoints
+                #cropped_filename_with_keypoints = os.path.join(output_folder, f"{class_name}_with_keypoints.jpg")
+                #cv2.imwrite(cropped_filename_with_keypoints, canvas)
+                
+                
+                    # Save the adjusted keypoints
+                #keypoints_filename = os.path.join(output_folder, "adjusted_keypoints.json")
+                #with open(keypoints_filename, "w") as kp_file:
+                #    json.dump(adjusted_keypoints, kp_file, indent=4)
+>>>>>>> a59784b086d12f0ab1b44bc56a107e26833d62b5
 
                         
 
