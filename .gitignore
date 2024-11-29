@@ -1,11 +1,14 @@
-Mambaforge-*
-.venv
-Mambaforge-Linux-x86_64.sh
-mambaforge
+# Common
+*.pyc
 datasets/MARS/raw_images_front
 datasets/MARS/raw_images_top
+
+# Aisu
+.venv
 results
-*.pyc
 wandb
 Localization/Ground
 Localization/YOLO_Cropped
+
+# Deprecated
+*.slp

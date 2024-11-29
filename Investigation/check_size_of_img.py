@@ -7,7 +7,7 @@ os.chdir('/Users/dahye/PycharmProjects/CLIP-pose-estimation')
 print("Current working directory:", os.getcwd())
 
 #Load the JSON data from the file
-with open('datasets/MARS/MARS_front_raw.json') as f:
+with open('datasets/MARS/MARS_keypoints_front.json') as f:
     dataset = json.load(f)
 
 # Initialize flags

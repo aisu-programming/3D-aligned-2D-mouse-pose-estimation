@@ -39,7 +39,7 @@ def compute_bounding_box(coords, margin, img_width, img_height):
     return x_center, y_center, width, height
 
 
-json_paths = {TOP: "datasets/MARS/MARS_keypoints_top.json", FRONT: "datasets/MARS/MARS_front_raw.json"}
+json_paths = {TOP: "datasets/MARS/MARS_keypoints_top.json", FRONT: "datasets/MARS/MARS_keypoints_front.json"}
 for view_type in [TOP, FRONT]:
     # 2. Load JSON data
     json_path = json_paths[view_type]

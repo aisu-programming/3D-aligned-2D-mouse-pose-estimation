@@ -11,7 +11,7 @@ from torch.utils.data import random_split, DataLoader
 
 
 sweep_config = {
-    'method': 'random',
+    'method': 'bayes',
     'metric': {
         'name': 'avg_val_loss',
         'goal': 'minimize'
@@ -24,7 +24,7 @@ sweep_config = {
             'distribution': 'uniform', 'min': 0.998, 'max': 0.9999
         },
         'batch_size': {
-            'values': [ 8, 16, 32, 64 ]
+            'values': [ 16, 32, 64 ]
         },
         'base_filters': {
             'values': [ 16, 24, 32, 48, 64 ]
@@ -36,7 +36,7 @@ sweep_config = {
             'values': [ 1.5, 2, 2.5 ]
         },
         'num_epochs': {
-            'value': 30
+            'value': 50
         },
         'num_groups': {
             'values': [ 4, 8, 16 ]
@@ -45,12 +45,12 @@ sweep_config = {
             'values': [ 0.1, 0.2, 0.3 ]
         },
         "sigma": {
-            "values": [ 3, 5, 10, 15 ]
+            "values": [ 5 ]
         }
     }
 }
 
-sweep_id = wandb.sweep(sweep_config, project="Pose Estimation")
+sweep_id = wandb.sweep(sweep_config, project="Pose Estimation (sigma=5)")
 
 def train(config=None):
 
@@ -130,8 +130,12 @@ def train(config=None):
             print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.8f}, " + \
                   f"Validation Loss: {avg_val_loss:.8f}, LR: {optimizer.param_groups[0]['lr']:.10f}")
             
-            if epoch == 5:
-                if avg_val_loss > 0.001:
-                    break
+            # if epoch == 10:
+            #     if avg_val_loss > 0.003:
+            #         break
+
+            # if epoch == 20:
+            #     if avg_val_loss > 0.0069:
+            #         break
 
 wandb.agent(sweep_id, function=train)
