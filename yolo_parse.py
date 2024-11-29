@@ -12,7 +12,7 @@ IMG_WIDTH = {TOP: 1024, FRONT: 1280}
 IMG_HEIGHT = {TOP: 570, FRONT: 500}
 
 # YOLO Prediction Folder
-YOLO_PREDICTION_FOLDER = "YOLO_prediction\\kaggle\\working\\yolov5\\runs\\detect\\exp\\labels"
+YOLO_PREDICTION_FOLDER = "Localization/YOLO/predictions/"
 
 # Function to parse YOLO bounding boxes
 def parse_yolo_bboxes(yolo_file, img_width, img_height):
