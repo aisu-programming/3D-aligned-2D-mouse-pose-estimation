@@ -8,7 +8,7 @@ import json
 # print("Current working directory:", os.getcwd())
 
 # Load the JSON data from the file
-with open('datasets/MARS/MARS_front_raw.json') as f:
+with open('datasets/MARS/MARS_keypoints_front.json') as f:
     input_data = json.load(f)
 print(input_data[0])
 print(input_data[0]['coords']['black'])
