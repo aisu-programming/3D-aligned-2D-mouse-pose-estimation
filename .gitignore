@@ -7,6 +7,8 @@ datasets/MARS/raw_images_top
 .venv
 results
 wandb
+Localization/Ground
+Localization/YOLO_Cropped
 
 # Deprecated
 *.slp
