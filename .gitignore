@@ -7,3 +7,5 @@ datasets/MARS/raw_images_top
 results
 *.pyc
 wandb
+Localization/Ground
+Localization/YOLO_Cropped
