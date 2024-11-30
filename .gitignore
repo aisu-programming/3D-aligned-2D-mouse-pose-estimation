@@ -1,14 +1,12 @@
 # Common
 *.pyc
-datasets/MARS/raw_images_front
-datasets/MARS/raw_images_top
+datasets/MARS/**/*.jpg
 
 # Aisu
 .venv
 results
 wandb
 Localization/Ground
-Localization/YOLO_Cropped
 
 # Deprecated
 *.slp
