@@ -3,7 +3,7 @@ import torch
 import torchvision
 from torchvision import transforms
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -14,11 +14,10 @@ from collections import defaultdict
 # ===========================
 # Configuration Parameters
 # ===========================
-# Number of images to use for the entire dataset (set to None to use all)
-NUM_IMAGES = None  # e.g., 1000
 
-# Split ratio for train and test sets
-TRAIN_SPLIT = 0.8  # 80% training, 20% testing
+# Number of images to use for training and validation (set to None to use all)
+NUM_TRAIN_IMAGES = None  # e.g., 800
+NUM_VAL_IMAGES = None    # e.g., 200
 
 # Batch size for training and testing
 BATCH_SIZE = 16
@@ -34,8 +33,10 @@ DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 
 # Paths
 DATASET_DIR = os.path.join('..', 'dataset')
-IMAGES_DIR = os.path.join(DATASET_DIR, 'images')
-LABELS_DIR = os.path.join(DATASET_DIR, 'labels')
+TRAIN_IMAGES_DIR = os.path.join(DATASET_DIR, 'images', 'train')
+TRAIN_LABELS_DIR = os.path.join(DATASET_DIR, 'labels', 'train')
+VAL_IMAGES_DIR = os.path.join(DATASET_DIR, 'images', 'val')
+VAL_LABELS_DIR = os.path.join(DATASET_DIR, 'labels', 'val')
 OUTPUT_DIR = os.path.join('..', 'output')
 PREDICTIONS_DIR = os.path.join(OUTPUT_DIR, 'predictions')
 OUTPUT_IMAGES_DIR = os.path.join(PREDICTIONS_DIR, 'images')
@@ -102,25 +103,26 @@ class LocalizationDataset(Dataset):
         label_path = os.path.join(self.labels_dir, self.image_files[idx].replace('.jpg', '.txt'))
         boxes = []
         labels = []
-        with open(label_path, 'r') as f:
-            for line in f:
-                parts = line.strip().split()
-                original_class_id = int(parts[0])
-                class_id = original_class_id + CLASS_ID_OFFSET  # Shift class ID
+        if os.path.exists(label_path):
+            with open(label_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    original_class_id = int(parts[0])
+                    class_id = original_class_id + CLASS_ID_OFFSET  # Shift class ID
 
-                x_center = float(parts[1])
-                y_center = float(parts[2])
-                width = float(parts[3])
-                height = float(parts[4])
+                    x_center = float(parts[1])
+                    y_center = float(parts[2])
+                    width = float(parts[3])
+                    height = float(parts[4])
 
-                # Convert to absolute coordinates
-                xmin = (x_center - width / 2) * img_width
-                ymin = (y_center - height / 2) * img_height
-                xmax = (x_center + width / 2) * img_width
-                ymax = (y_center + height / 2) * img_height
+                    # Convert to absolute coordinates
+                    xmin = (x_center - width / 2) * img_width
+                    ymin = (y_center - height / 2) * img_height
+                    xmax = (x_center + width / 2) * img_width
+                    ymax = (y_center + height / 2) * img_height
 
-                boxes.append([xmin, ymin, xmax, ymax])
-                labels.append(class_id)
+                    boxes.append([xmin, ymin, xmax, ymax])
+                    labels.append(class_id)
 
         target = {}
         target['boxes'] = torch.tensor(boxes, dtype=torch.float32)
@@ -239,11 +241,55 @@ def compute_iou(boxA, boxB):
     return iou
 
 # ===========================
+# Matching Function
+# ===========================
+def match_predictions_to_ground_truths(ground_truth, predictions, iou_threshold=0.5):
+    """
+    Matches predictions to ground truths ensuring only one prediction per ground truth.
+    Selects the prediction with the highest confidence score for each ground truth.
+    Returns the filtered predictions.
+    """
+    gt_boxes = ground_truth['boxes'].numpy()
+    gt_labels = ground_truth['labels'].numpy()
+
+    pred_boxes = predictions['boxes'].numpy()
+    pred_labels = predictions['labels'].numpy()
+    pred_scores = predictions['scores'].numpy()
+
+    matched_gt = set()
+    matched_pred = set()
+    filtered_predictions = {'boxes': [], 'labels': [], 'scores': []}
+
+    # Sort predictions by score descending
+    sorted_indices = np.argsort(-pred_scores)
+    pred_boxes = pred_boxes[sorted_indices]
+    pred_labels = pred_labels[sorted_indices]
+    pred_scores = pred_scores[sorted_indices]
+
+    for pred_idx, (pred_box, label, score) in enumerate(zip(pred_boxes, pred_labels, pred_scores)):
+        if score < 0.5:
+            continue  # Skip low confidence predictions
+        for gt_idx, (gt_box, gt_label) in enumerate(zip(gt_boxes, gt_labels)):
+            if gt_label != label or gt_idx in matched_gt:
+                continue
+            iou = compute_iou(pred_box, gt_box)
+            if iou >= iou_threshold:
+                # Assign this prediction to the ground truth
+                matched_gt.add(gt_idx)
+                matched_pred.add(pred_idx)
+                filtered_predictions['boxes'].append(pred_box)
+                filtered_predictions['labels'].append(label)
+                filtered_predictions['scores'].append(score)
+                break  # Move to the next prediction
+
+    return filtered_predictions
+
+# ===========================
 # Evaluation Function
 # ===========================
 def evaluate(model, data_loader, device):
     """
-    Evaluate the model on the test dataset and compute precision and MSE for bounding boxes.
+    Evaluate the model on the validation dataset and compute precision and MSE for bounding boxes.
     Ensures only one prediction per object is used (highest confidence).
     Returns precision and MSE.
     """
@@ -311,36 +357,37 @@ def main():
         transforms.ToTensor(),
     ])
 
-    # Initialize the full dataset
-    full_image_files = sorted([f for f in os.listdir(IMAGES_DIR) if f.endswith('.jpg')])
+    # Initialize the training dataset
+    train_image_files = sorted([f for f in os.listdir(TRAIN_IMAGES_DIR) if f.endswith('.jpg')])
 
-    if NUM_IMAGES is not None:
-        full_image_files = full_image_files[:NUM_IMAGES]
+    if NUM_TRAIN_IMAGES is not None:
+        if NUM_TRAIN_IMAGES > len(train_image_files):
+            print(f"Requested {NUM_TRAIN_IMAGES} training images, but only {len(train_image_files)} available. Using all training images.")
+            train_image_files = train_image_files
+        else:
+            train_image_files = train_image_files[:NUM_TRAIN_IMAGES]
 
-    # Create the full dataset
-    full_dataset = LocalizationDataset(IMAGES_DIR, LABELS_DIR, transform=transform, image_files=full_image_files)
+    train_dataset = LocalizationDataset(TRAIN_IMAGES_DIR, TRAIN_LABELS_DIR, transform=transform, image_files=train_image_files)
 
-    # Calculate split sizes
-    total_size = len(full_dataset)
-    train_size = int(TRAIN_SPLIT * total_size)
-    test_size = total_size - train_size
+    # Initialize the validation dataset
+    val_image_files = sorted([f for f in os.listdir(VAL_IMAGES_DIR) if f.endswith('.jpg')])
 
-    # Ensure that the dataset is large enough
-    if train_size == 0 or test_size == 0:
-        raise ValueError("Train/Test split results in an empty dataset. Adjust NUM_IMAGES or TRAIN_SPLIT.")
+    if NUM_VAL_IMAGES is not None:
+        if NUM_VAL_IMAGES > len(val_image_files):
+            print(f"Requested {NUM_VAL_IMAGES} validation images, but only {len(val_image_files)} available. Using all validation images.")
+            val_image_files = val_image_files
+        else:
+            val_image_files = val_image_files[:NUM_VAL_IMAGES]
 
-    # Split the dataset into training and testing
-    train_dataset, test_dataset = random_split(full_dataset, [train_size, test_size],
-                                               generator=torch.Generator().manual_seed(42))  # For reproducibility
+    val_dataset = LocalizationDataset(VAL_IMAGES_DIR, VAL_LABELS_DIR, transform=transform, image_files=val_image_files)
 
-    print(f"Total images: {total_size}")
-    print(f"Training images: {train_size}")
-    print(f"Testing images: {test_size}")
+    print(f"Total training images: {len(train_dataset)}")
+    print(f"Total validation images: {len(val_dataset)}")
 
-    # Create DataLoaders for training and testing
+    # Create DataLoaders for training and validation
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
                               num_workers=4, collate_fn=collate_fn)
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False,
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False,
                              num_workers=4, collate_fn=collate_fn)
 
     # Initialize the model
@@ -390,8 +437,8 @@ def main():
         avg_loss = epoch_loss / len(train_loader)
         print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] - Average Loss: {avg_loss:.4f}")
 
-        # Evaluate on the test set
-        precision, mse = evaluate(model, test_loader, DEVICE)
+        # Evaluate on the validation set
+        precision, mse = evaluate(model, val_loader, DEVICE)
         print(f"Validation Precision: {precision:.4f}, Validation MSE: {mse:.4f}")
 
         # Log the metrics
@@ -403,11 +450,11 @@ def main():
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
 
-    # Final Prediction and Visualization on Test Set
-    print("Performing final predictions on the test set...")
+    # Final Prediction and Visualization on Validation Set
+    print("Performing final predictions on the validation set...")
 
-    # Create a DataLoader for the entire test set with batch_size=1 for visualization
-    visualize_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4, collate_fn=collate_fn)
+    # Create a DataLoader for the entire validation set with batch_size=1 for visualization
+    visualize_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
     with torch.no_grad():
         for idx, (images, targets) in enumerate(tqdm(visualize_loader, desc="Visualizing Predictions")):
@@ -424,14 +471,19 @@ def main():
             matched_predictions = match_predictions_to_ground_truths(target_cpu, prediction_cpu)
 
             # Save the image with bounding boxes
-            image_filename = test_dataset.dataset.image_files[test_dataset.indices[idx]]
+            image_filename = val_dataset.image_files[idx]
             output_image_path = os.path.join(OUTPUT_IMAGES_DIR, f"pred_{image_filename}")
             visualize_predictions(image_cpu, target_cpu, matched_predictions, output_image_path)
 
             # Save predictions to .txt file
             output_txt_filename = f"pred_{os.path.splitext(image_filename)[0]}.txt"
             output_txt_path = os.path.join(OUTPUT_LABELS_DIR, output_txt_filename)
-            img_width, img_height = Image.open(os.path.join(IMAGES_DIR, image_filename)).size
+            img_path = os.path.join(VAL_IMAGES_DIR, image_filename)
+            if os.path.exists(img_path):
+                img_width, img_height = Image.open(img_path).size
+            else:
+                img_width, img_height = 1, 1  # Avoid division by zero
+
             detections = []
             for box, label, score in zip(matched_predictions['boxes'], matched_predictions['labels'], matched_predictions['scores']):
                 detections.append({
@@ -442,50 +494,6 @@ def main():
             save_predictions(detections, (img_width, img_height), output_txt_path)
 
     print(f"Prediction and visualization completed. Results saved to {PREDICTIONS_DIR}")
-
-# ===========================
-# Matching Function
-# ===========================
-def match_predictions_to_ground_truths(ground_truth, predictions, iou_threshold=0.5):
-    """
-    Matches predictions to ground truths ensuring only one prediction per ground truth.
-    Selects the prediction with the highest confidence score for each ground truth.
-    Returns the filtered predictions.
-    """
-    gt_boxes = ground_truth['boxes'].numpy()
-    gt_labels = ground_truth['labels'].numpy()
-
-    pred_boxes = predictions['boxes'].numpy()
-    pred_labels = predictions['labels'].numpy()
-    pred_scores = predictions['scores'].numpy()
-
-    matched_gt = set()
-    matched_pred = set()
-    filtered_predictions = {'boxes': [], 'labels': [], 'scores': []}
-
-    # Sort predictions by score descending
-    sorted_indices = np.argsort(-pred_scores)
-    pred_boxes = pred_boxes[sorted_indices]
-    pred_labels = pred_labels[sorted_indices]
-    pred_scores = pred_scores[sorted_indices]
-
-    for pred_idx, (pred_box, label, score) in enumerate(zip(pred_boxes, pred_labels, pred_scores)):
-        if score < 0.5:
-            continue  # Skip low confidence predictions
-        for gt_idx, (gt_box, gt_label) in enumerate(zip(gt_boxes, gt_labels)):
-            if gt_label != label or gt_idx in matched_gt:
-                continue
-            iou = compute_iou(pred_box, gt_box)
-            if iou >= iou_threshold:
-                # Assign this prediction to the ground truth
-                matched_gt.add(gt_idx)
-                matched_pred.add(pred_idx)
-                filtered_predictions['boxes'].append(pred_box)
-                filtered_predictions['labels'].append(label)
-                filtered_predictions['scores'].append(score)
-                break  # Move to the next prediction
-
-    return filtered_predictions
 
 if __name__ == '__main__':
     main()
