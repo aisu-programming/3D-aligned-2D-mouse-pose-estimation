@@ -1,0 +1,20 @@
+Epoch 1:
+  total_loss: 0.5649
+  bbox_mse: 0.1789
+
+Epoch 2:
+  total_loss: 0.4940
+  bbox_mse: 0.2712
+
+Epoch 3:
+  total_loss: 0.3963
+  bbox_mse: 0.2413
+
+Epoch 4:
+  total_loss: 0.3410
+  bbox_mse: 0.2144
+
+Epoch 5:
+  total_loss: 0.3211
+  bbox_mse: 0.2029
+
