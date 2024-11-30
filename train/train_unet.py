@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 from tqdm import tqdm
 from utils import get_lr, generate_heatmaps, visualize_heatmaps, visualize_peaks
 from models.unet import UNet
-from data.dataset import Resize, Pad, ToTensor, RandomHorizontalFlip, CocoKeypointsDataset
+from data.dataset import Resize, Pad, ToTensor, RandomHorizontalFlip, KeypointsDataset
 from torch.utils.data import random_split, DataLoader
 
 
@@ -29,9 +29,9 @@ transform = transforms.Compose([
     ToTensor(),
 ])
 
-dataset = CocoKeypointsDataset(
-    img_dir="datasets/MARS",
-    ann_file="datasets/MARS/MARS_front_COCO.json",
+dataset = KeypointsDataset(
+    annotations_file="../datasets/MARS/MARS_front_COCO.json",
+    img_dir="../datasets/MARS",
     transform=transform)
 
 dataset_size = len(dataset)
@@ -43,6 +43,7 @@ train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=batch_size*2, shuffle=False)
+
 model = UNet(n_channels=1, n_classes=18,
              base_filters=base_filters,
              num_layers=num_layers,
@@ -53,7 +54,7 @@ criterion = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
 
-os.makedirs("results", exist_ok=True)
+os.makedirs("../results", exist_ok=True)
 num_epochs = 500
 for epoch in range(num_epochs):
     model.train()
@@ -86,11 +87,11 @@ for epoch in range(num_epochs):
                     if i == 8: break
                     image = images[i]
 
-                    visualize_heatmaps(image, outputs[i], save_path=f"results/heatmap_pred_{idx}_{i}.png")
-                    visualize_peaks(image, outputs[i], save_path=f"results/peaks_pred_{idx}_{i}.png")
+                    visualize_heatmaps(image, outputs[i], save_path=f"../results/heatmap_pred_{idx}_{i}.png")
+                    visualize_peaks(image, outputs[i], save_path=f"../results/peaks_pred_{idx}_{i}.png")
 
-                    visualize_heatmaps(image, keypoints_heatmaps[i], save_path=f"results/heatmap_truth_{idx}_{i}.png")
-                    visualize_peaks(image, keypoints_heatmaps[i], save_path=f"results/peaks_truth_{idx}_{i}.png")
+                    visualize_heatmaps(image, keypoints_heatmaps[i], save_path=f"../results/heatmap_truth_{idx}_{i}.png")
+                    visualize_peaks(image, keypoints_heatmaps[i], save_path=f"../results/peaks_truth_{idx}_{i}.png")
 
     avg_val_loss = np.average(val_losses)
 

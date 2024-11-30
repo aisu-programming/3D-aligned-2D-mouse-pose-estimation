@@ -4,6 +4,8 @@ import json
 import numpy as np
 from tqdm import tqdm
 
+
+
 # Constants
 CLASS_MAPPING = {"black": 0, "white": 1}
 TOP = "top"
@@ -14,6 +16,8 @@ IMG_HEIGHT = {TOP: 570, FRONT: 500}
 
 # YOLO Prediction Folder
 YOLO_PREDICTION_FOLDER = "Localization/YOLO/predictions/"
+
+
 
 # Function to parse YOLO bounding boxes
 def parse_yolo_bboxes(yolo_file, img_width, img_height):
@@ -34,6 +38,8 @@ def parse_yolo_bboxes(yolo_file, img_width, img_height):
             y_max = int((y_center + height / 2) * img_height)
             
             bboxes.append(((x_min, y_min, x_max, y_max), class_id))
+
+    bboxes = sorted(bboxes, key=lambda bbox: bbox[1])
     return bboxes
 
 # Function to crop an object from the image using the bounding box
@@ -44,8 +50,6 @@ def crop_object_from_image(image, bbox):
         cropped_image = image[y_min:y_max, x_min:x_max]
         return cropped_image
     return None
-
-
 
 # Function to create a black canvas and paste the cropped image onto it
 def paste_on_black_canvas(cropped_image, max_width, max_height):
@@ -90,7 +94,6 @@ def draw_bounding_boxes(image, bboxes):
 
     return image
 
-
 # this is for adjusting
 def adjust_keypoints(keypoints, x_offset, y_offset):
     adjusted_keypoints = {"x": [], "y": []}
@@ -103,7 +106,7 @@ def adjust_keypoints(keypoints, x_offset, y_offset):
 def draw_keypoints(image, keypoints, color=(0, 255, 0), radius=3, thickness=-1):
     for x, y in zip(keypoints["x"], keypoints["y"]):
         cv2.circle(image, (int(x), int(y)), radius, color, thickness)
-#####
+
 
 
 # Main loop for processing
@@ -115,42 +118,43 @@ for view_type in [FRONT, TOP]:
     with open(json_path, "r") as f:
         dataset = json.load(f)
 
-    print(f"Processing {view_type} images:")
-    max_width = 0
-    max_height = 0
-    max_width_image = ""
-    max_height_image = ""
-    max_width_class = ""
-    max_height_class = ""
 
-    # Calculate max width and height
-    for idx, entry in enumerate(dataset):
-        # Construct the YOLO prediction file path
-        img_path = f"{original_path[view_type]}/{entry['filename']}"
-        yolo_file = os.path.join(YOLO_PREDICTION_FOLDER, f"{os.path.splitext(entry['filename'])[0]}.txt")
-        
-        if not os.path.exists(img_path) or not os.path.exists(yolo_file):
-            continue
-        
-        bboxes = parse_yolo_bboxes(yolo_file, IMG_WIDTH[view_type], IMG_HEIGHT[view_type])
-        for (bbox, class_id) in bboxes:
-            x_min, y_min, x_max, y_max = bbox
-            width = x_max - x_min
-            height = y_max - y_min
+    """ Uncomment the below part to calculate the original max width and max height """
+    # Customized max width and max height
+    max_width  = { TOP: 320, FRONT: 480 }[view_type]
+    max_height = { TOP: 320, FRONT: 480 }[view_type]
 
-            if width > max_width:
-                max_width = width
-                max_width_image = entry["filename"]
-                max_width_class = "black" if class_id == CLASS_MAPPING["black"] else "white"
-            
-            if height > max_height:
-                max_height = height
-                max_height_image = entry["filename"]
-                max_height_class = "black" if class_id == CLASS_MAPPING["black"] else "white"
+    # print(f"Calculating the max width and height from {view_type} images...")
+    # max_width = 0
+    # max_height = 0
+    # max_width_image = ""
+    # max_height_image = ""
+    # max_width_class = ""
+    # max_height_class = ""
+    # # Calculate max width and height
+    # for idx, entry in enumerate(dataset):
+    #     # Construct the YOLO prediction file path
+    #     img_path = f"{original_path[view_type]}/{entry['filename']}"
+    #     yolo_file = os.path.join(YOLO_PREDICTION_FOLDER, f"{os.path.splitext(entry['filename'])[0]}.txt")
+    #     if not os.path.exists(img_path) or not os.path.exists(yolo_file):
+    #         continue
+    #     bboxes = parse_yolo_bboxes(yolo_file, IMG_WIDTH[view_type], IMG_HEIGHT[view_type])
+    #     for (bbox, class_id) in bboxes:
+    #         x_min, y_min, x_max, y_max = bbox
+    #         width = x_max - x_min
+    #         height = y_max - y_min
+    #         if width > max_width:
+    #             max_width = width
+    #             max_width_image = entry["filename"]
+    #             max_width_class = "black" if class_id == CLASS_MAPPING["black"] else "white"
+    #         if height > max_height:
+    #             max_height = height
+    #             max_height_image = entry["filename"]
+    #             max_height_class = "black" if class_id == CLASS_MAPPING["black"] else "white"
+    # # Log the maximum bounding box details
+    # print(f"Maximum bounding box width: {max_width}px, found in image: {max_width_image} ({max_width_class})")
+    # print(f"Maximum bounding box height: {max_height}px, found in image: {max_height_image} ({max_height_class})")
 
-    # Log the maximum bounding box details
-    print(f"Maximum bounding box width: {max_width}px, found in image: {max_width_image} ({max_width_class})")
-    print(f"Maximum bounding box height: {max_height}px, found in image: {max_height_image} ({max_height_class})")
 
     adjusted_keypoint_list = []  # To store all adjusted keypoints for each view_type
 
@@ -213,6 +217,20 @@ for view_type in [FRONT, TOP]:
                 adjusted_keypoint = adjust_keypoints(entry["coords"][class_name], x_offset, y_offset)
 
 
+                # # Check if adjusted keypoints are out of the cropped images
+                # if sum(map(lambda x: (x<((max_width-w)//2)) or (x>((max_width+w)//2)), adjusted_keypoint["x"])) >= 1:
+                #     print(f"Some keypoints X out of cropped images: {cropped_filename}")
+                # if sum(map(lambda y: (y<((max_height-h)//2)) or (y>((max_height+h)//2)), adjusted_keypoint["y"])) >= 1:
+                #     print(f"Some keypoints Y out of cropped images: {cropped_filename}")
+
+
+                # Check if adjusted keypoints are out of the bound
+                if sum(map(lambda x: (x<0) or (x>max_width), adjusted_keypoint["x"])) >= 1:
+                    print(f"Some keypoints X out of bound: {cropped_filename}")
+                if sum(map(lambda y: (y<0) or (y>max_height), adjusted_keypoint["y"])) >= 1:
+                    print(f"Some keypoints Y out of bound: {cropped_filename}")
+
+
                 """ Uncomment if you want to save the visualization results of adjusted keypoints on cropped images """
                 # # Draw adjusted keypoints on the black canvas image
                 # draw_keypoints(canvas, adjusted_keypoint)
@@ -224,10 +242,11 @@ for view_type in [FRONT, TOP]:
 
 
                 adjusted_keypoint_list.append({
-                    "filename" : cropped_filename,
-                    "width"    : max_width,
-                    "height"   : max_height,
-                    "coords"   : adjusted_keypoint
+                    "filename"   : cropped_filename,
+                    "class_name" : class_name,
+                    "width"      : max_width,
+                    "height"     : max_height,
+                    "coords"     : adjusted_keypoint
                 })
 
     # Save the adjusted keypoints

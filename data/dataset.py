@@ -1,8 +1,11 @@
+import os
 import cv2
+import json
 import torch
 import numpy as np
 from pycocotools.coco import COCO
 from torch.utils.data import Dataset
+from deprecated import deprecated
 
 
 
@@ -26,6 +29,7 @@ class Resize:
         keypoints_rescaled[:, 1] = keypoints[:, 1] * (new_h / h)  # y 坐标
 
         return {"image": image_resized, "keypoints": keypoints_rescaled}
+
 
 class Pad:
     def __init__(self, output_size):
@@ -60,6 +64,7 @@ class Pad:
 
         return {"image": image, "keypoints": keypoints}
 
+
 class RandomHorizontalFlip:
     def __init__(self, p=0.5, img_width=640):
         self.p = p
@@ -72,6 +77,7 @@ class RandomHorizontalFlip:
             keypoints[:, 0] = self.img_width - keypoints[:, 0]
         return {"image": image, "keypoints": keypoints}
 
+
 class ToTensor:
     def __call__(self, sample):
         image, keypoints = sample["image"], sample["keypoints"]
@@ -80,6 +86,59 @@ class ToTensor:
         keypoints = torch.from_numpy(keypoints).float()
         return {"image": image, "keypoints": keypoints}
 
+
+class KeypointsDataset(Dataset):
+    def __init__(self, annotations_file, img_dir, transform=None):
+        """
+        Custom Dataset class for handling keypoint data.
+        :param annotations_file: Path to the JSON file containing the data.
+        :param img_dir: Directory where the images are stored.
+        :param transform: Optional transformations or augmentations to apply to the data.
+        """
+        with open(annotations_file, "r") as f:
+            self.data = json.load(f)
+        
+        self.img_dir = img_dir
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        """
+        Returns a single sample.
+        """
+        sample = self.data[idx]
+
+        # Load the image
+        img_path = os.path.join(self.img_dir, sample["filename"])
+        image = cv2.imread(img_path, cv2.IMREAD_COLOR)  # Load the image in color mode
+        if image is None:
+            raise FileNotFoundError(f"Image {img_path} not found!")
+
+        # Process keypoint data
+        keypoints = []
+        for color, coords in sample["coords"].items():
+            x = np.array(coords["x"])
+            y = np.array(coords["y"])
+            # Mimic COCO keypoint format; assume all keypoints are visible (visibility=2)
+            visibility = np.ones_like(x) * 2
+            keypoints.append(np.stack([x, y, visibility], axis=-1))  # (num_keypoints, 3)
+        
+        # Combine keypoints from all colors
+        keypoints = np.concatenate(keypoints, axis=0)  # (N, 3)
+
+        # Package the data
+        sample = {"image": image, "keypoints": keypoints}
+
+        # Apply transformations (if any)
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+
+@deprecated
 class CocoKeypointsDataset(Dataset):
     def __init__(self, img_dir, ann_file, transform=None):
         self.coco = COCO(ann_file)

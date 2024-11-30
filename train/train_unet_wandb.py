@@ -5,44 +5,44 @@ import torchvision.transforms as transforms
 from tqdm import tqdm
 from utils import get_lr, generate_heatmaps
 from models.unet import UNet
-from data.dataset import Resize, Pad, ToTensor, RandomHorizontalFlip, CocoKeypointsDataset
+from data.dataset import Resize, Pad, ToTensor, RandomHorizontalFlip, KeypointsDataset
 from torch.utils.data import random_split, DataLoader
 
 
 
 sweep_config = {
-    'method': 'bayes',
-    'metric': {
-        'name': 'avg_val_loss',
-        'goal': 'minimize'
+    "method": "bayes",
+    "metric": {
+        "name": "avg_val_loss",
+        "goal": "minimize"
     },
-    'parameters': {
-        'learning_rate': {
-            'distribution': 'uniform', 'min': 1e-4, 'max': 1e-2
+    "parameters": {
+        "learning_rate": {
+            "distribution": "uniform", "min": 1e-4, "max": 1e-2
         },
-        'gamma': {
-            'distribution': 'uniform', 'min': 0.998, 'max': 0.9999
+        "gamma": {
+            "distribution": "uniform", "min": 0.998, "max": 0.9999
         },
-        'batch_size': {
-            'values': [ 16, 32, 64 ]
+        "batch_size": {
+            "values": [ 16, 32, 64 ]
         },
-        'base_filters': {
-            'values': [ 16, 24, 32, 48, 64 ]
+        "base_filters": {
+            "values": [ 16, 24, 32, 48, 64 ]
         },
-        'num_layers': {
-            'values': [ 4, 5, 6 ]
+        "num_layers": {
+            "values": [ 4, 5, 6 ]
         },
-        'expand_factor': {
-            'values': [ 1.5, 2, 2.5 ]
+        "expand_factor": {
+            "values": [ 1.5, 2, 2.5 ]
         },
-        'num_epochs': {
-            'value': 50
+        "num_epochs": {
+            "value": 50
         },
-        'num_groups': {
-            'values': [ 4, 8, 16 ]
+        "num_groups": {
+            "values": [ 4, 8, 16 ]
         },
-        'dropout_prob': {
-            'values': [ 0.1, 0.2, 0.3 ]
+        "dropout_prob": {
+            "values": [ 0.1, 0.2, 0.3 ]
         },
         "sigma": {
             "values": [ 5 ]
@@ -64,9 +64,9 @@ def train(config=None):
             ToTensor(),
         ])
 
-        dataset = CocoKeypointsDataset(
-            img_dir="datasets/MARS",
-            ann_file="datasets/MARS/MARS_front_COCO.json",
+        dataset = KeypointsDataset(
+            annotations_file="../datasets/MARS/MARS_front_COCO.json",
+            img_dir="../datasets/MARS",
             transform=transform)
 
         dataset_size = len(dataset)
@@ -121,10 +121,10 @@ def train(config=None):
             avg_val_loss = np.average(val_losses)
 
             wandb.log({
-                'epoch': epoch + 1,
-                'avg_train_loss': avg_train_loss,
-                'avg_val_loss': avg_val_loss,
-                'learning_rate': get_lr(optimizer)
+                "epoch": epoch + 1,
+                "avg_train_loss": avg_train_loss,
+                "avg_val_loss": avg_val_loss,
+                "learning_rate": get_lr(optimizer)
             })
 
             print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.8f}, " + \
