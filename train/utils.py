@@ -39,12 +39,12 @@ def visualize_heatmaps(image: torch.Tensor, heatmaps: torch.Tensor, save_path=No
     image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
     
     heatmaps: np.ndarray = heatmaps.cpu().numpy()  # [num_joints, h, w]
-    heatmap_sum = np.sum(heatmaps, axis=0)  # [h, w]
+    heatmap_max = np.max(heatmaps, axis=0)  # [h, w]
     
-    heatmap_sum = (heatmap_sum - heatmap_sum.min()) / (heatmap_sum.max() - heatmap_sum.min())
-    heatmap_sum = (heatmap_sum * 255).astype(np.uint8)  # [h, w]
+    heatmap_max = (heatmap_max - heatmap_max.min()) / (heatmap_max.max() - heatmap_max.min())
+    heatmap_max = (heatmap_max * 255).astype(np.uint8)  # [h, w]
 
-    heatmap_resized = cv2.resize(heatmap_sum, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_LINEAR)  # [H, W]
+    heatmap_resized = cv2.resize(heatmap_max, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_LINEAR)  # [H, W]
     
     heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_JET)  # [H, W, 3]
     heatmap_color = cv2.cvtColor(heatmap_color, cv2.COLOR_BGR2RGB)
@@ -58,12 +58,12 @@ def visualize_heatmaps(image: torch.Tensor, heatmaps: torch.Tensor, save_path=No
         plt.show()
 
 
-def visualize_peaks(image: torch.Tensor, heatmaps: torch.Tensor, threshold=0.1, save_path=None):
+def visualize_peaks_from_heatmap(image: torch.Tensor, heatmaps: torch.Tensor, threshold=0.1, save_path=None):
     image: np.ndarray = image.cpu().numpy().transpose(1, 2, 0)
     image = (image * 255).astype(np.uint8)
     
     heatmaps: np.ndarray = heatmaps.cpu().numpy()
-    num_joints, H, W = heatmaps.shape
+    num_joints, _, _ = heatmaps.shape
     
     _, ax = plt.subplots(1)
     ax.imshow(image)
@@ -75,6 +75,28 @@ def visualize_peaks(image: torch.Tensor, heatmaps: torch.Tensor, threshold=0.1, 
         if max_value > threshold:
             ax.plot(x, y, "ro", markersize=3)
             ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=4)
+    
+    plt.axis("off")
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0)
+        plt.close()
+    else:
+        plt.show()
+
+
+def visualize_peaks(image: torch.Tensor, peaks: torch.Tensor, threshold=0.1, save_path=None):
+    image: np.ndarray = image.cpu().numpy().transpose(1, 2, 0)
+    image = (image * 255).astype(np.uint8)
+    
+    peaks: np.ndarray = peaks.cpu().numpy()
+    
+    _, ax = plt.subplots(1)
+    ax.imshow(image)
+    
+    for i in range(peaks.shape[0]):
+        x, y, _ = peaks[i]
+        ax.plot(x, y, "ro", markersize=3)
+        ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=4)
     
     plt.axis("off")
     if save_path:

@@ -57,7 +57,6 @@ class Pad:
             cv2.BORDER_CONSTANT,
             value=0
         )
-        image = np.expand_dims(image, axis=-1)
 
         keypoints[:, 0] += left
         keypoints[:, 1] += top
@@ -66,21 +65,36 @@ class Pad:
 
 
 class RandomHorizontalFlip:
-    def __init__(self, p=0.5, img_width=640):
+    def __init__(self, p=0.5):
         self.p = p
-        self.img_width = img_width
+
+    def __call__(self, sample):
+        image, keypoints = sample["image"], sample["keypoints"]
+        _, w = image.shape
+        if np.random.rand() < self.p:
+            image = np.fliplr(image).copy()
+            keypoints[:, 0] = w - keypoints[:, 0]
+        return {"image": image, "keypoints": keypoints}
+    
+
+class RandomRotate90Degree:
+    def __init__(self, p=0.5):
+        self.p = p
 
     def __call__(self, sample):
         image, keypoints = sample["image"], sample["keypoints"]
         if np.random.rand() < self.p:
-            image = np.fliplr(image).copy()
-            keypoints[:, 0] = self.img_width - keypoints[:, 0]
+            image = np.rot90(image).copy()
+            h, _ = image.shape
+            keypoints[:, 0] = h - keypoints[:, 0]
+            keypoints[:, [0, 1]] = keypoints[:, [1, 0]]
         return {"image": image, "keypoints": keypoints}
 
 
 class ToTensor:
     def __call__(self, sample):
         image, keypoints = sample["image"], sample["keypoints"]
+        image = np.expand_dims(image, axis=-1)
         image: np.ndarray = image.transpose((2, 0, 1))  # HWC to CHW
         image = torch.from_numpy(image).float() / 255.0
         keypoints = torch.from_numpy(keypoints).float()
@@ -90,7 +104,7 @@ class ToTensor:
 class KeypointsDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None):
         """
-        Custom Dataset class for handling keypoint data.
+        For handling keypoint data from the original dataset
         :param annotations_file: Path to the JSON file containing the data.
         :param img_dir: Directory where the images are stored.
         :param transform: Optional transformations or augmentations to apply to the data.
@@ -112,7 +126,7 @@ class KeypointsDataset(Dataset):
 
         # Load the image
         img_path = os.path.join(self.img_dir, sample["filename"])
-        image = cv2.imread(img_path, cv2.IMREAD_COLOR)  # Load the image in color mode
+        image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
         if image is None:
             raise FileNotFoundError(f"Image {img_path} not found!")
 
@@ -130,6 +144,56 @@ class KeypointsDataset(Dataset):
 
         # Package the data
         sample = {"image": image, "keypoints": keypoints}
+
+        # Apply transformations (if any)
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+    
+
+class CroppedKeypointsDataset(Dataset):
+    def __init__(self, annotations_file, img_dir, transform=None):
+        """
+        For handling keypoint data from the cropped JSON file
+        :param annotations_file: Path to the JSON file containing the data.
+        :param img_dir: Directory where the images are stored.
+        :param transform: Optional transformations or augmentations to apply to the data.
+        """
+        with open(annotations_file, "r") as f:
+            self.data = json.load(f)
+        
+        self.img_dir = img_dir
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        """
+        Returns a single sample.
+        """
+        sample = self.data[idx]
+
+        # Load the image
+        img_path = os.path.join(self.img_dir, sample["filename"])
+        image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            raise FileNotFoundError(f"Image {img_path} not found!")
+
+        # Process keypoint data
+        x = np.array(sample["coords"]["x"])
+        y = np.array(sample["coords"]["y"])
+        # Mimic COCO keypoint format; assume all keypoints are visible (visibility=2)
+        visibility = np.ones_like(x) * 2
+        keypoints = np.stack([x, y, visibility], axis=-1)  # (num_keypoints, 3)
+
+        # Package the data
+        sample = {
+            "image": image,
+            "keypoints": keypoints,
+            "class_name": sample["class_name"]  # Add class_name to the sample
+        }
 
         # Apply transformations (if any)
         if self.transform:

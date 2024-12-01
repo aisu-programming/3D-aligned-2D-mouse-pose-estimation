@@ -64,7 +64,11 @@ def paste_on_black_canvas(cropped_image, max_width, max_height):
     start_y = (max_height - cropped_h) // 2
     
     # Paste the cropped image onto the canvas
-    canvas[start_y:start_y + cropped_h, start_x:start_x + cropped_w] = cropped_image
+    try:
+        canvas[start_y:start_y + cropped_h, start_x:start_x + cropped_w] = cropped_image
+    except ValueError as e:
+        print(start_x, cropped_w, start_y, cropped_h)
+        raise e
     return canvas
 
 # Function to draw bounding boxes and annotate black/white labels
@@ -121,8 +125,8 @@ for view_type in [FRONT, TOP]:
 
     """ Uncomment the below part to calculate the original max width and max height """
     # Customized max width and max height
-    max_width  = { TOP: 320, FRONT: 480 }[view_type]
-    max_height = { TOP: 320, FRONT: 480 }[view_type]
+    max_width  = { TOP: 360, FRONT: 480 }[view_type]
+    max_height = { TOP: 360, FRONT: 480 }[view_type]
 
     # print(f"Calculating the max width and height from {view_type} images...")
     # max_width = 0
