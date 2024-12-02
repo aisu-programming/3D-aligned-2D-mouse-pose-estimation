@@ -9,7 +9,7 @@ def get_lr(optimizer: torch.optim.Optimizer) -> float:
     for param_group in optimizer.param_groups:
         return param_group["lr"]
 
-def generate_heatmaps(keypoints, heatmap_size, sigma=2):
+def generate_heatmaps(keypoints, heatmap_size, sigma=2, scale=1):
 
     batch_size, num_joints, _ = keypoints.shape
     height, width = heatmap_size
@@ -20,6 +20,8 @@ def generate_heatmaps(keypoints, heatmap_size, sigma=2):
     for b in range(batch_size):
         for j in range(num_joints):
             x, y, v = keypoints[b, j]
+            x *= scale
+            y *= scale
             if v > 0:
                 y_grid, x_grid = torch.meshgrid(
                     torch.arange(height, device=device),
@@ -58,7 +60,7 @@ def visualize_heatmaps(image: torch.Tensor, heatmaps: torch.Tensor, save_path=No
         plt.show()
 
 
-def visualize_peaks_from_heatmap(image: torch.Tensor, heatmaps: torch.Tensor, threshold=0.1, save_path=None):
+def visualize_peaks_from_heatmap(image: torch.Tensor, heatmaps: torch.Tensor, threshold=0.1, save_path=None, scale=1):
     image: np.ndarray = image.cpu().numpy().transpose(1, 2, 0)
     image = (image * 255).astype(np.uint8)
     
@@ -66,15 +68,17 @@ def visualize_peaks_from_heatmap(image: torch.Tensor, heatmaps: torch.Tensor, th
     num_joints, _, _ = heatmaps.shape
     
     _, ax = plt.subplots(1)
-    ax.imshow(image)
+    ax.imshow(image, cmap="gray")
     
     for i in range(num_joints):
         heatmap: np.ndarray = heatmaps[i]
         y, x = np.unravel_index(np.argmax(heatmap), heatmap.shape)
-        max_value = heatmap[y, x]
-        if max_value > threshold:
-            ax.plot(x, y, "ro", markersize=3)
-            ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=4)
+        y *= scale
+        x *= scale
+        # max_value = heatmap[y, x]
+        # if max_value > threshold:
+        ax.plot(x, y, "ro", markersize=3)
+        ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=4)
     
     plt.axis("off")
     if save_path:

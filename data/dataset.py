@@ -22,7 +22,7 @@ class Resize:
         h, w = image.shape[:2]
         new_h, new_w = self.output_size
 
-        image_resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        image_resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
         keypoints_rescaled = keypoints.copy()
         keypoints_rescaled[:, 0] = keypoints[:, 0] * (new_w / w)  # x 坐标
