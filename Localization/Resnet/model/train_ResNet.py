@@ -6,10 +6,8 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from tqdm import tqdm
 import numpy as np
-from collections import defaultdict
 
 # ===========================
 # Configuration Parameters
@@ -23,7 +21,7 @@ NUM_VAL_IMAGES = None    # e.g., 200
 BATCH_SIZE = 16
 
 # Number of epochs
-NUM_EPOCHS = 5
+NUM_EPOCHS = 1
 
 # Learning rate
 LEARNING_RATE = 0.005
@@ -38,15 +36,9 @@ TRAIN_LABELS_DIR = os.path.join(DATASET_DIR, 'labels', 'train')
 VAL_IMAGES_DIR = os.path.join(DATASET_DIR, 'images', 'val')
 VAL_LABELS_DIR = os.path.join(DATASET_DIR, 'labels', 'val')
 OUTPUT_DIR = os.path.join('..', 'output')
-PREDICTIONS_DIR = os.path.join(OUTPUT_DIR, 'predictions')
-OUTPUT_IMAGES_DIR = os.path.join(PREDICTIONS_DIR, 'images')
-OUTPUT_LABELS_DIR = os.path.join(PREDICTIONS_DIR, 'labels')
-LOG_FILE_PATH = os.path.join(OUTPUT_DIR, 'loss_log.txt')
+LOG_FILE_PATH = os.path.join(OUTPUT_DIR, 'loss_log_test.txt')
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(PREDICTIONS_DIR, exist_ok=True)
-os.makedirs(OUTPUT_IMAGES_DIR, exist_ok=True)
-os.makedirs(OUTPUT_LABELS_DIR, exist_ok=True)
 
 # ===========================
 # Class Definitions
@@ -57,7 +49,7 @@ os.makedirs(OUTPUT_LABELS_DIR, exist_ok=True)
 # Model expects classes: 1 and 2
 CLASS_ID_OFFSET = 1  # Shift class IDs by 1
 
-# Define class names for visualization
+# Define class names for visualization (optional, can be removed if not visualizing)
 CLASS_NAMES = {
     1: 'Class 0',  # Original class 0
     2: 'Class 1',  # Original class 1
@@ -136,86 +128,6 @@ class LocalizationDataset(Dataset):
 def collate_fn(batch):
     return tuple(zip(*batch))
 
-def visualize_predictions(image, ground_truth, predictions, output_path):
-    """
-    Visualize ground truth and predicted bounding boxes on the image and save it.
-    """
-    fig, ax = plt.subplots(1, figsize=(12, 8))
-    # Convert tensor to PIL Image
-    image = image.permute(1, 2, 0).cpu().numpy()
-    ax.imshow(image)
-
-    # Plot ground truth boxes
-    for box, label in zip(ground_truth['boxes'], ground_truth['labels']):
-        xmin, ymin, xmax, ymax = box
-        width = xmax - xmin
-        height = ymax - ymin
-        class_name = CLASS_NAMES.get(label.item(), f"Class {label.item()}")
-        rect = patches.Rectangle((xmin, ymin), width, height,
-                                 linewidth=2, edgecolor='g', facecolor='none', linestyle='--')
-        ax.add_patch(rect)
-        ax.text(xmin, ymin, f"GT: {class_name}", fontsize=12, color='g', verticalalignment='top')
-
-    # Plot predicted boxes
-    for box, label, score in zip(predictions['boxes'], predictions['labels'], predictions['scores']):
-        if score >= 0.5:  # Threshold for visualization
-            xmin, ymin, xmax, ymax = box
-            width = xmax - xmin
-            height = ymax - ymin
-            class_name = CLASS_NAMES.get(label.item(), f"Class {label.item()}")
-            rect = patches.Rectangle((xmin, ymin), width, height,
-                                     linewidth=2, edgecolor='r', facecolor='none')
-            ax.add_patch(rect)
-            ax.text(xmin, ymin - 10, f"Pred: {class_name} ({score:.2f})", fontsize=12, color='r',
-                    verticalalignment='top')
-
-    # Create custom legend
-    from matplotlib.lines import Line2D
-    legend_elements = [
-        Line2D([0], [0], color='g', lw=2, linestyle='--', label='Ground Truth'),
-        Line2D([0], [0], color='r', lw=2, label='Prediction')
-    ]
-    ax.legend(handles=legend_elements, loc='upper right')
-
-    plt.axis('off')
-    plt.tight_layout()
-    plt.savefig(output_path, bbox_inches='tight')
-    plt.close()
-
-def save_predictions(detections, image_size, output_txt_path):
-    """
-    Save detections to a .txt file in the format:
-    class_id x_center y_center width height
-    where coordinates are normalized between 0 and 1.
-    """
-    img_width, img_height = image_size
-    lines = []
-    for det in detections:
-        label = det['label']
-        bbox = det['bbox']
-        score = det['score']  # Optional: You can choose to include the score or not
-
-        xmin, ymin, xmax, ymax = bbox
-        x_center = ((xmin + xmax) / 2) / img_width
-        y_center = ((ymin + ymax) / 2) / img_height
-        width = (xmax - xmin) / img_width
-        height = (ymax - ymin) / img_height
-
-        # Ensure values are between 0 and 1
-        x_center = min(max(x_center, 0.0), 1.0)
-        y_center = min(max(y_center, 0.0), 1.0)
-        width = min(max(width, 0.0), 1.0)
-        height = min(max(height, 0.0), 1.0)
-
-        line = f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
-        lines.append(line)
-
-    # Write to .txt file
-    with open(output_txt_path, 'w') as f:
-        for line in lines:
-            f.write(line + '\n')
-    # If no detections, an empty file is created
-
 def compute_iou(boxA, boxB):
     """
     Compute the Intersection over Union (IoU) of two bounding boxes.
@@ -239,50 +151,6 @@ def compute_iou(boxA, boxB):
     iou = interArea / float(boxAArea + boxBArea - interArea) if (boxAArea + boxBArea - interArea) != 0 else 0
 
     return iou
-
-# ===========================
-# Matching Function
-# ===========================
-def match_predictions_to_ground_truths(ground_truth, predictions, iou_threshold=0.5):
-    """
-    Matches predictions to ground truths ensuring only one prediction per ground truth.
-    Selects the prediction with the highest confidence score for each ground truth.
-    Returns the filtered predictions.
-    """
-    gt_boxes = ground_truth['boxes'].numpy()
-    gt_labels = ground_truth['labels'].numpy()
-
-    pred_boxes = predictions['boxes'].numpy()
-    pred_labels = predictions['labels'].numpy()
-    pred_scores = predictions['scores'].numpy()
-
-    matched_gt = set()
-    matched_pred = set()
-    filtered_predictions = {'boxes': [], 'labels': [], 'scores': []}
-
-    # Sort predictions by score descending
-    sorted_indices = np.argsort(-pred_scores)
-    pred_boxes = pred_boxes[sorted_indices]
-    pred_labels = pred_labels[sorted_indices]
-    pred_scores = pred_scores[sorted_indices]
-
-    for pred_idx, (pred_box, label, score) in enumerate(zip(pred_boxes, pred_labels, pred_scores)):
-        if score < 0.5:
-            continue  # Skip low confidence predictions
-        for gt_idx, (gt_box, gt_label) in enumerate(zip(gt_boxes, gt_labels)):
-            if gt_label != label or gt_idx in matched_gt:
-                continue
-            iou = compute_iou(pred_box, gt_box)
-            if iou >= iou_threshold:
-                # Assign this prediction to the ground truth
-                matched_gt.add(gt_idx)
-                matched_pred.add(pred_idx)
-                filtered_predictions['boxes'].append(pred_box)
-                filtered_predictions['labels'].append(label)
-                filtered_predictions['scores'].append(score)
-                break  # Move to the next prediction
-
-    return filtered_predictions
 
 # ===========================
 # Evaluation Function
@@ -323,7 +191,7 @@ def evaluate(model, data_loader, device):
 
                 for pred_idx, (pred_box, score, label) in enumerate(zip(pred_boxes, pred_scores, pred_labels)):
                     if score < 0.5:
-                        continue
+                        continue  # Skip low confidence predictions
                     for gt_idx, (gt_box, gt_label) in enumerate(zip(gt_boxes, target['labels'].cpu().numpy())):
                         if gt_label != label or gt_idx in matched_gt:
                             continue
@@ -446,54 +314,9 @@ def main():
             log_file.write(f"{epoch+1},{avg_loss:.4f},{precision:.4f},{mse:.4f}\n")
 
     # Save the trained model
-    model_path = os.path.join(OUTPUT_DIR, 'fasterrcnn_resnet50_fpn.pth')
+    model_path = os.path.join(OUTPUT_DIR, 'fasterrcnn_resnet50_fpn_test.pth')
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
-
-    # Final Prediction and Visualization on Validation Set
-    print("Performing final predictions on the validation set...")
-
-    # Create a DataLoader for the entire validation set with batch_size=1 for visualization
-    visualize_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4, collate_fn=collate_fn)
-
-    with torch.no_grad():
-        for idx, (images, targets) in enumerate(tqdm(visualize_loader, desc="Visualizing Predictions")):
-            image = images[0].to(DEVICE)
-            target = targets[0]
-            prediction = model([image])[0]
-
-            # Move tensors to CPU for visualization
-            image_cpu = image.cpu()
-            target_cpu = {k: v.cpu() for k, v in target.items()}
-            prediction_cpu = {k: v.cpu() for k, v in prediction.items()}
-
-            # Match predictions to ground truths to ensure only one prediction per object
-            matched_predictions = match_predictions_to_ground_truths(target_cpu, prediction_cpu)
-
-            # Save the image with bounding boxes
-            image_filename = val_dataset.image_files[idx]
-            output_image_path = os.path.join(OUTPUT_IMAGES_DIR, f"pred_{image_filename}")
-            visualize_predictions(image_cpu, target_cpu, matched_predictions, output_image_path)
-
-            # Save predictions to .txt file
-            output_txt_filename = f"pred_{os.path.splitext(image_filename)[0]}.txt"
-            output_txt_path = os.path.join(OUTPUT_LABELS_DIR, output_txt_filename)
-            img_path = os.path.join(VAL_IMAGES_DIR, image_filename)
-            if os.path.exists(img_path):
-                img_width, img_height = Image.open(img_path).size
-            else:
-                img_width, img_height = 1, 1  # Avoid division by zero
-
-            detections = []
-            for box, label, score in zip(matched_predictions['boxes'], matched_predictions['labels'], matched_predictions['scores']):
-                detections.append({
-                    'bbox': box,
-                    'label': label.item(),
-                    'score': score.item()
-                })
-            save_predictions(detections, (img_width, img_height), output_txt_path)
-
-    print(f"Prediction and visualization completed. Results saved to {PREDICTIONS_DIR}")
 
 if __name__ == '__main__':
     main()
