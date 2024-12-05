@@ -8,6 +8,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
+from contextlib import contextmanager
+import warnings
 
 # ===========================
 # Configuration Parameters
@@ -21,7 +23,7 @@ NUM_VAL_IMAGES = None    # e.g., 200
 BATCH_SIZE = 16
 
 # Number of epochs
-NUM_EPOCHS = 1
+NUM_EPOCHS = 3
 
 # Learning rate
 LEARNING_RATE = 0.005
@@ -36,7 +38,7 @@ TRAIN_LABELS_DIR = os.path.join(DATASET_DIR, 'labels', 'train')
 VAL_IMAGES_DIR = os.path.join(DATASET_DIR, 'images', 'val')
 VAL_LABELS_DIR = os.path.join(DATASET_DIR, 'labels', 'val')
 OUTPUT_DIR = os.path.join('..', 'output')
-LOG_FILE_PATH = os.path.join(OUTPUT_DIR, 'loss_log_test.txt')
+LOG_FILE_PATH = os.path.join(OUTPUT_DIR, 'loss_log_same.txt')
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -152,23 +154,34 @@ def compute_iou(boxA, boxB):
 
     return iou
 
+# Context manager to temporarily set model to train mode
+@contextmanager
+def set_train_mode(model):
+    original_mode = model.training
+    model.train()
+    try:
+        yield
+    finally:
+        model.train(original_mode)
+
 # ===========================
-# Evaluation Function
+# Evaluation Functions
 # ===========================
-def evaluate(model, data_loader, device):
+def evaluate_metrics(model, data_loader, device):
     """
-    Evaluate the model on the validation dataset and compute precision and MSE for bounding boxes.
+    Evaluate the model on the validation dataset and compute precision, MSE, and IoU for bounding boxes.
     Ensures only one prediction per object is used (highest confidence).
-    Returns precision and MSE.
+    Returns precision, MSE, and average IoU.
     """
     model.eval()
     total = 0
     correct = 0
     total_mse = 0.0
+    total_iou = 0.0  # Initialize total IoU
     total_matched = 0
 
     with torch.no_grad():
-        for images, targets in tqdm(data_loader, desc="Evaluating", leave=False):
+        for images, targets in tqdm(data_loader, desc="Evaluating Metrics", leave=False):
             images = list(img.to(device) for img in images)
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
@@ -200,6 +213,7 @@ def evaluate(model, data_loader, device):
                             correct += 1
                             mse = np.mean((pred_box - gt_box) ** 2)
                             total_mse += mse
+                            total_iou += iou  # Accumulate IoU
                             total_matched += 1
                             matched_gt.add(gt_idx)
                             matched_pred.add(pred_idx)
@@ -209,16 +223,41 @@ def evaluate(model, data_loader, device):
 
     precision = correct / total if total > 0 else 0
     mse = total_mse / total_matched if total_matched > 0 else 0.0
+    average_iou = total_iou / total_matched if total_matched > 0 else 0.0  # Compute average IoU
 
-    return precision, mse
+    return precision, mse, average_iou
+
+def compute_validation_loss(model, data_loader, device):
+    """
+    Compute the average validation loss over the validation dataset.
+    Ensures the model is in training mode to return loss dictionaries.
+    """
+    total_val_loss = 0.0
+
+    # Temporarily set model to train mode to ensure loss_dict is returned
+    with set_train_mode(model), torch.no_grad():
+        for images, targets in tqdm(data_loader, desc="Computing Validation Loss", leave=False):
+            images = list(img.to(device) for img in images)
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+            loss_dict = model(images, targets)
+            if isinstance(loss_dict, list):
+                # In some cases, model might return a list; handle it gracefully
+                loss_dict = loss_dict[0]
+            losses = sum(loss for loss in loss_dict.values())
+
+            total_val_loss += losses.item()
+
+    avg_val_loss = total_val_loss / len(data_loader)
+    return avg_val_loss
 
 # ===========================
 # Main Training Function
 # ===========================
 def main():
-    # Initialize the log file
+    # Initialize the log file with headers
     with open(LOG_FILE_PATH, 'w') as log_file:
-        log_file.write("Epoch,Average_Training_Loss,Validation_Precision,Validation_MSE\n")
+        log_file.write("Epoch,Average_Training_Loss,Validation_Loss,Validation_Precision,Validation_MSE,Validation_IoU\n")  # Added Validation_Loss
 
     # Transformations
     transform = transforms.Compose([
@@ -231,7 +270,7 @@ def main():
     if NUM_TRAIN_IMAGES is not None:
         if NUM_TRAIN_IMAGES > len(train_image_files):
             print(f"Requested {NUM_TRAIN_IMAGES} training images, but only {len(train_image_files)} available. Using all training images.")
-            train_image_files = train_image_files
+            # train_image_files = train_image_files
         else:
             train_image_files = train_image_files[:NUM_TRAIN_IMAGES]
 
@@ -243,7 +282,7 @@ def main():
     if NUM_VAL_IMAGES is not None:
         if NUM_VAL_IMAGES > len(val_image_files):
             print(f"Requested {NUM_VAL_IMAGES} validation images, but only {len(val_image_files)} available. Using all validation images.")
-            val_image_files = val_image_files
+            # val_image_files = val_image_files
         else:
             val_image_files = val_image_files[:NUM_VAL_IMAGES]
 
@@ -252,14 +291,22 @@ def main():
     print(f"Total training images: {len(train_dataset)}")
     print(f"Total validation images: {len(val_dataset)}")
 
+    # Adjust num_workers to avoid DataLoader warnings
+    num_workers = min(4, 2)  # Set to 2 as per system recommendation
+    if num_workers < 4:
+        warnings.warn(f"Adjusting num_workers from 4 to {num_workers} to match system recommendations.")
+    
     # Create DataLoaders for training and validation
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
-                              num_workers=4, collate_fn=collate_fn)
+                              num_workers=num_workers, collate_fn=collate_fn)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False,
-                             num_workers=4, collate_fn=collate_fn)
+                             num_workers=num_workers, collate_fn=collate_fn)
 
     # Initialize the model
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+    # Suppress the deprecated 'pretrained' warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights='FasterRCNN_ResNet50_FPN_Weights.COCO_V1')
 
     # Determine the number of classes
     # Original class IDs: 0 and 1
@@ -282,6 +329,13 @@ def main():
                                                    step_size=3,
                                                    gamma=0.1)
 
+    # Initialize metric histories for plotting
+    iou_history = []
+    mse_history = []
+    precision_history = []
+    train_loss_history = []    # Added for training loss history
+    val_loss_history = []      # Added for validation loss history
+
     # Training loop
     for epoch in range(NUM_EPOCHS):
         model.train()
@@ -302,21 +356,93 @@ def main():
             loop.set_postfix(loss=losses.item())
 
         lr_scheduler.step()
-        avg_loss = epoch_loss / len(train_loader)
-        print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] - Average Loss: {avg_loss:.4f}")
+        avg_train_loss = epoch_loss / len(train_loader)
+        train_loss_history.append(avg_train_loss)  # Append to training loss history
+        print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] - Average Training Loss: {avg_train_loss:.4f}")
+
+        # Compute validation loss
+        val_loss = compute_validation_loss(model, val_loader, DEVICE)
+        val_loss_history.append(val_loss)  # Append to validation loss history
+        print(f"Validation Loss: {val_loss:.4f}")
 
         # Evaluate on the validation set
-        precision, mse = evaluate(model, val_loader, DEVICE)
-        print(f"Validation Precision: {precision:.4f}, Validation MSE: {mse:.4f}")
+        precision, mse, average_iou = evaluate_metrics(model, val_loader, DEVICE)
+        print(f"Validation Precision: {precision:.4f}, Validation MSE: {mse:.4f}, Validation IoU: {average_iou:.4f}")
+
+        # Append metrics to histories for plotting
+        iou_history.append(average_iou)
+        mse_history.append(mse)
+        precision_history.append(precision)
 
         # Log the metrics
         with open(LOG_FILE_PATH, 'a') as log_file:
-            log_file.write(f"{epoch+1},{avg_loss:.4f},{precision:.4f},{mse:.4f}\n")
+            log_file.write(f"{epoch+1},{avg_train_loss:.4f},{val_loss:.4f},{precision:.4f},{mse:.4f},{average_iou:.4f}\n")
 
     # Save the trained model
-    model_path = os.path.join(OUTPUT_DIR, 'fasterrcnn_resnet50_fpn_test.pth')
+    model_path = os.path.join(OUTPUT_DIR, 'fasterrcnn_resnet50_fpn_same.pth')
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
+
+    # ===========================
+    # Plotting Metrics
+    # ===========================
+    try:
+        epochs = range(1, NUM_EPOCHS + 1)
+
+        # Plot IoU, Precision, and MSE on a single figure
+        plt.figure(figsize=(24, 5))  # Increased figure size for better layout
+
+        # Plot IoU
+        plt.subplot(1, 3, 1)
+        plt.plot(epochs, iou_history, marker='o', linestyle='-', color='b', label='IoU')
+        plt.title('Average IoU Over Epochs')
+        plt.xlabel('Epoch')
+        plt.ylabel('IoU')
+        plt.ylim(0, 1)
+        plt.grid(True)
+        plt.legend()
+
+        # Plot Precision
+        plt.subplot(1, 3, 2)
+        plt.plot(epochs, precision_history, marker='o', linestyle='-', color='g', label='Precision')
+        plt.title('Validation Precision Over Epochs')
+        plt.xlabel('Epoch')
+        plt.ylabel('Precision')
+        plt.ylim(0, 1)
+        plt.grid(True)
+        plt.legend()
+
+        # Plot MSE
+        plt.subplot(1, 3, 3)
+        plt.plot(epochs, mse_history, marker='o', linestyle='-', color='r', label='MSE')
+        plt.title('Validation MSE Over Epochs')
+        plt.xlabel('Epoch')
+        plt.ylabel('MSE')
+        plt.grid(True)
+        plt.legend()
+
+        plt.tight_layout()
+        plot_path = os.path.join(OUTPUT_DIR, 'metrics_over_same.png')
+        plt.savefig(plot_path)
+        print(f"Metrics plot saved to {plot_path}")
+
+        # Plot Training vs Validation Loss on a separate figure
+        plt.figure(figsize=(8, 6))  # Create a new figure
+        plt.plot(epochs, train_loss_history, marker='o', linestyle='-', color='orange', label='Training Loss')
+        plt.plot(epochs, val_loss_history, marker='o', linestyle='-', color='purple', label='Validation Loss')
+        plt.title('Training vs Validation Loss Over Epochs')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.grid(True)
+        plt.legend()
+
+        plot_path = os.path.join(OUTPUT_DIR, 'train_valid.png')
+        plt.savefig(plot_path)
+        print(f"Training vs Validation Loss plot saved to {plot_path}")
+
+    except Exception as e:
+        print(f"Failed to plot metrics history: {e}")
+
 
 if __name__ == '__main__':
     main()
