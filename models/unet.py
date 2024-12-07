@@ -70,7 +70,7 @@ class UNet(nn.Module):
 
         self.out_conv = nn.Conv2d(filters[0], n_classes, kernel_size=1)
 
-    def forward(self, x):
+    def forward(self, x, ret_rep=False):
         enc_features = []
         for enc in self.encoder:
             x = enc(x)
@@ -83,4 +83,8 @@ class UNet(nn.Module):
             x = up(x, enc_features[-(idx+2)])
 
         logits = self.out_conv(x)
-        return logits
+        if not ret_rep:
+            return logits
+        else:
+            # print(enc_features[-1].shape)
+            return logits, enc_features[-1]

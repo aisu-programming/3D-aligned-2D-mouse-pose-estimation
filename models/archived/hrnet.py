@@ -4,8 +4,6 @@
 # Written by Bin Xiao (Bin.Xiao@microsoft.com)
 # ------------------------------------------------------------------------------
 
-import os
-import torch
 import torch.nn as nn
 
 
@@ -322,13 +320,13 @@ class PoseHighResolutionNet(nn.Module):
 
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
-        num_branches_cur = len(num_channels_cur_layer)
         num_branches_pre = len(num_channels_pre_layer)
+        num_branches_cur = len(num_channels_cur_layer)
 
         transition_layers = []
         for i in range(num_branches_cur):
             if i < num_branches_pre:
-                if num_channels_cur_layer[i] != num_channels_pre_layer[i]:
+                if num_channels_pre_layer[i] != num_channels_cur_layer[i]:
                     transition_layers.append(
                         nn.Sequential(
                             nn.Conv2d(
@@ -345,9 +343,8 @@ class PoseHighResolutionNet(nn.Module):
             else:
                 conv3x3s = []
                 for j in range(i+1-num_branches_pre):
-                    inchannels = num_channels_pre_layer[-1]
-                    outchannels = num_channels_cur_layer[i] \
-                        if j == i-num_branches_pre else inchannels
+                    inchannels  = num_channels_pre_layer[-1]
+                    outchannels = num_channels_cur_layer[i] if j == i-num_branches_pre else inchannels
                     conv3x3s.append(
                         nn.Sequential(
                             nn.Conv2d(
@@ -412,7 +409,7 @@ class PoseHighResolutionNet(nn.Module):
 
         return nn.Sequential(*modules), num_inchannels
 
-    def forward(self, x):
+    def forward(self, x, ret_rep=False):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -424,54 +421,32 @@ class PoseHighResolutionNet(nn.Module):
         x_list = []
         for i in range(self.stage2_cfg["NUM_BRANCHES"]):
             if self.transition1[i] is not None:
-                x_list.append(self.transition1[i](x))
+                x_tmp = self.transition1[i](x)
+                x_list.append(x_tmp)
             else:
                 x_list.append(x)
-        y_list = self.stage2(x_list)
+        y_list_1 = self.stage2(x_list)
 
         x_list = []
         for i in range(self.stage3_cfg["NUM_BRANCHES"]):
             if self.transition2[i] is not None:
-                x_list.append(self.transition2[i](y_list[-1]))
+                x_tmp = self.transition2[i](y_list_1[-1])
+                x_list.append(x_tmp)
             else:
-                x_list.append(y_list[i])
-        y_list = self.stage3(x_list)
+                x_list.append(y_list_1[i])
+        y_list_2 = self.stage3(x_list)
 
         x_list = []
         for i in range(self.stage4_cfg["NUM_BRANCHES"]):
             if self.transition3[i] is not None:
-                x_list.append(self.transition3[i](y_list[-1]))
+                x_tmp = self.transition3[i](y_list_2[-1])
+                x_list.append(x_tmp)
             else:
-                x_list.append(y_list[i])
-        y_list = self.stage4(x_list)
+                x_list.append(y_list_2[i])
+        y_list_3 = self.stage4(x_list)
 
-        x = self.final_layer(y_list[0])
-
-        return x
-
-    # def init_weights(self, pretrained=''):
-    #     for m in self.modules():
-    #         if isinstance(m, nn.Conv2d):
-    #             # nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-    #             nn.init.normal_(m.weight, std=0.001)
-    #             for name, _ in m.named_parameters():
-    #                 if name in ["bias"]:
-    #                     nn.init.constant_(m.bias, 0)
-    #         elif isinstance(m, nn.BatchNorm2d):
-    #             nn.init.constant_(m.weight, 1)
-    #             nn.init.constant_(m.bias, 0)
-    #         elif isinstance(m, nn.ConvTranspose2d):
-    #             nn.init.normal_(m.weight, std=0.001)
-    #             for name, _ in m.named_parameters():
-    #                 if name in ["bias"]:
-    #                     nn.init.constant_(m.bias, 0)
-    #     if os.path.isfile(pretrained):
-    #         pretrained_state_dict = torch.load(pretrained)
-    #         need_init_state_dict = {}
-    #         for name, m in pretrained_state_dict.items():
-    #             if name.split('.')[0] in self.pretrained_layers \
-    #                or self.pretrained_layers[0] is '*':
-    #                 need_init_state_dict[name] = m
-    #         self.load_state_dict(need_init_state_dict, strict=False)
-    #     elif pretrained:
-    #         raise ValueError("{} is not exist!".format(pretrained))
+        x = self.final_layer(y_list_3[0])
+        if not ret_rep:
+            return x
+        else:
+            return x, [ y_list_1, y_list_2, y_list_3 ]

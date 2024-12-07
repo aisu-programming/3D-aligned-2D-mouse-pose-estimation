@@ -78,7 +78,7 @@ def visualize_peaks_from_heatmap(image: torch.Tensor, heatmaps: torch.Tensor, th
         # max_value = heatmap[y, x]
         # if max_value > threshold:
         ax.plot(x, y, "ro", markersize=3)
-        ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=4)
+        ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=6)
     
     plt.axis("off")
     if save_path:
@@ -100,7 +100,7 @@ def visualize_peaks(image: torch.Tensor, peaks: torch.Tensor, threshold=0.1, sav
     for i in range(peaks.shape[0]):
         x, y, _ = peaks[i]
         ax.plot(x, y, "ro", markersize=3)
-        ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=4)
+        ax.text(x + 2, y - 2, f"{i}", color="yellow", fontsize=6)
     
     plt.axis("off")
     if save_path:
@@ -108,3 +108,34 @@ def visualize_peaks(image: torch.Tensor, peaks: torch.Tensor, threshold=0.1, sav
         plt.close()
     else:
         plt.show()
+
+
+class InfoNCELoss(torch.nn.Module):
+    def __init__(self, temperature=0.5, device="cpu"):
+        super(InfoNCELoss, self).__init__()
+        self.temperature = temperature
+        self.device = device
+        self.criterion = torch.nn.CrossEntropyLoss()
+
+    def forward(self, z1_list: list[torch.Tensor], z2_list: list[torch.Tensor]):
+        assert len(z1_list) == len(z2_list)
+
+        loss = None
+        for z1, z2 in zip(z1_list, z2_list):
+            batch_size = z1.size(0)
+
+            z1 = z1.view(batch_size, -1)  # (batch_size, c * w * h)
+            z2 = z2.view(batch_size, -1)  # (batch_size, c * w * h)
+
+            z1 = torch.nn.functional.normalize(z1, dim=1)  # (batch_size, c * w * h)
+            z2 = torch.nn.functional.normalize(z2, dim=1)  # (batch_size, c * w * h)
+            similarity_matrix = torch.matmul(z1, z2.T)  # (batch_size, batch_size)
+
+            labels = torch.arange(batch_size).to(self.device)  # (batch_size,)
+            logits = similarity_matrix / self.temperature
+            if loss is None:
+                loss = self.criterion(logits, labels)
+            else:
+                loss += self.criterion(logits, labels)
+
+        return loss

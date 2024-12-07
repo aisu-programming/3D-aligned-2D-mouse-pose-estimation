@@ -5,14 +5,19 @@ import torchvision.transforms as transforms
 from tqdm import tqdm
 from train.utils import get_lr, generate_heatmaps
 from models.hrnet import PoseHighResolutionNet
-from data.dataset import Resize, Pad, ToTensor, RandomHorizontalFlip, RandomRotate90Degree, KeypointsDataset, CroppedKeypointsDataset
+from data.dataset import Resize, ToTensor, RandomHorizontalFlip, RandomRotate90Degree, CroppedKeypointsDataset
 from torch.utils.data import random_split, DataLoader
 
 
 
-HEATMAP_OR_PEAK = "heatmap"
-TOP_OR_FRONT = "front"
-SIGMA = 3
+HEATMAP = "heatmap"
+PEAK = "peak"
+FRONT = "front"
+TOP = "top"
+
+heatmap_or_peak = HEATMAP
+front_or_top = FRONT
+sigma = 3
 
 sweep_config = {
     "method": "bayes",
@@ -22,55 +27,48 @@ sweep_config = {
     },
     "parameters": {
         "batch_size": {
-            "values": [ 8, 16, 32, 64 ]
+            "values": [ 4, 8 ]
         },
         "gamma": {
-            "distribution": "uniform", "min": 0.998, "max": 0.99999
+            "distribution": "uniform", "min": 0.9998, "max": 0.99999
         },
         "learning_rate": {
-            "distribution": "uniform", "min": 5e-5, "max": 5e-3
+            "distribution": "uniform", "min": 1e-4, "max": 1e-3
         },
         "num_epochs": {
             "value": 50
         },
         "num_block": {
-            "values": [ 2, 3, 4 ]
+            "values": [ 1, 2, 3 ]
         },
         "num_channel_base": {
-            "values": [ 24, 32, 48 ]
+            "values": [ 16, 24, 32, 48 ]
+        },
+        "chnl_exp_factor": {
+            "values": [ 1.5, 2, 2.5, 3 ]
         }
     }
 }
 
 #                                              TDPE = Top-Down Pose Estimation
-sweep_id = wandb.sweep(sweep_config, project=f"TDPE_HRNet_{TOP_OR_FRONT}_heatmap_sigma-{SIGMA}")
+sweep_id = wandb.sweep(sweep_config, project=f"TDPE_HRNet_{front_or_top}_sigma-{sigma}")
 
 def train(config=None):
 
+    torch.manual_seed(42)
+
     with wandb.init(config=config):
         config = wandb.config
-
-        # transform = transforms.Compose([
-        #     Resize((125, 320)),
-        #     Pad((128, 320)),
-        #     RandomHorizontalFlip(),
-        #     RandomRotate90Degree(),
-        #     ToTensor(),
-        # ])
-        # dataset = KeypointsDataset(
-        #     annotations_file="datasets/MARS/MARS_keypoints_front.json",
-        #     img_dir="datasets/MARS/raw_images_front",
-        #     transform=transform)
         
         transform = transforms.Compose([
-            Resize((256, 256)),
+            Resize(256),
             RandomHorizontalFlip(),
             RandomRotate90Degree(),
             ToTensor(),
         ])
         dataset = CroppedKeypointsDataset(
-            annotations_file=f"datasets/MARS/MARS_cropped_keypoints_{TOP_OR_FRONT}_YOLO.json",
-            img_dir=f"datasets/MARS/cropped_images_{TOP_OR_FRONT}_YOLO",
+            annotations_file=f"datasets/MARS/MARS_cropped_keypoints_{front_or_top}_YOLO.json",
+            img_dir=f"datasets/MARS/cropped_images_{front_or_top}_YOLO",
             transform=transform)
 
         dataset_size = len(dataset)
@@ -84,15 +82,15 @@ def train(config=None):
         val_loader = DataLoader(val_dataset, batch_size=config.batch_size*2, shuffle=False)
 
         cfg = {
-            "NUM_JOINTS": 9 if TOP_OR_FRONT == "top" else 11,
+            "NUM_JOINTS": 11 if front_or_top == FRONT else 7,
             "EXTRA": {
                 "FINAL_CONV_KERNEL": 1,
                 "STAGE2": {
                     "NUM_MODULES": 1,
                     "NUM_BRANCHES": 2,
                     "BLOCK": "BASIC",
-                    "NUM_BLOCKS": [ config.num_block, config.num_block ],
-                    "NUM_CHANNELS": [ config.num_channel_base * (2**i) for i in range(2) ],
+                    "NUM_BLOCKS": [ config.num_block for _ in range(2) ],
+                    "NUM_CHANNELS": [ int(config.num_channel_base*(config.chnl_exp_factor**i)) for i in range(2) ],
                     "FUSE_METHOD": "SUM"
                 },
                 "STAGE3": {
@@ -100,7 +98,7 @@ def train(config=None):
                     "NUM_BRANCHES": 3,
                     "BLOCK": "BASIC",
                     "NUM_BLOCKS": [ config.num_block for _ in range(3) ],
-                    "NUM_CHANNELS": [ config.num_channel_base * (2**i) for i in range(3) ],
+                    "NUM_CHANNELS": [ int(config.num_channel_base*(config.chnl_exp_factor**i)) for i in range(3) ],
                     "FUSE_METHOD": "SUM"
                 },
                 "STAGE4": {
@@ -108,7 +106,7 @@ def train(config=None):
                     "NUM_BRANCHES": 4,
                     "BLOCK": "BASIC",
                     "NUM_BLOCKS": [ config.num_block for _ in range(4) ],
-                    "NUM_CHANNELS": [ config.num_channel_base * (2**i) for i in range(4) ],
+                    "NUM_CHANNELS": [ int(config.num_channel_base*(config.chnl_exp_factor**i)) for i in range(4) ],
                     "FUSE_METHOD": "SUM"
                 }
             }
@@ -128,13 +126,13 @@ def train(config=None):
                 keypoints = batch["keypoints"].to(device)
                 outputs = model(images)
 
-                if HEATMAP_OR_PEAK == "heatmap":
+                if heatmap_or_peak == "heatmap":
                     heatmap_size = outputs.shape[2:]
                     scale = outputs.shape[-1] / images.shape[-1]
-                    keypoints_heatmaps = generate_heatmaps(keypoints, heatmap_size=heatmap_size, sigma=SIGMA, scale=scale)
+                    keypoints_heatmaps = generate_heatmaps(keypoints, heatmap_size=heatmap_size, sigma=sigma, scale=scale)
                     loss: torch.Tensor = criterion(outputs, keypoints_heatmaps)
 
-                elif HEATMAP_OR_PEAK == "peak":
+                elif heatmap_or_peak == "peak":
                     batch_size, num_joints, _, _ = outputs.shape
                     keypoints_pred = []
                     for b in range(batch_size):
@@ -167,13 +165,13 @@ def train(config=None):
                     keypoints = batch["keypoints"].to(device)
                     outputs = model(images)
 
-                    if HEATMAP_OR_PEAK == "heatmap":
+                    if heatmap_or_peak == "heatmap":
                         heatmap_size = outputs.shape[2:]
                         scale = outputs.shape[-1] / images.shape[-1]
-                        keypoints_heatmaps = generate_heatmaps(keypoints, heatmap_size=heatmap_size, sigma=SIGMA, scale=scale)
+                        keypoints_heatmaps = generate_heatmaps(keypoints, heatmap_size=heatmap_size, sigma=sigma, scale=scale)
                         loss = criterion(outputs, keypoints_heatmaps)
 
-                    elif HEATMAP_OR_PEAK == "peak":
+                    elif heatmap_or_peak == "peak":
                         batch_size, num_joints, _, _ = outputs.shape
                         keypoints_pred = []
                         for b in range(batch_size):
@@ -193,17 +191,15 @@ def train(config=None):
             avg_val_loss = np.average(val_losses)
 
             wandb.log({
-                # "epoch": epoch + 1,
                 "avg_train_loss": avg_train_loss,
                 "avg_val_loss": avg_val_loss,
                 "learning_rate": get_lr(optimizer)
             })
-
             print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.8f}, " + \
-                  f"Validation Loss: {avg_val_loss:.8f}, LR: {optimizer.param_groups[0]['lr']:.10f}")
+                  f"Validation Loss: {avg_val_loss:.8f}, LR: {get_lr(optimizer):.10f}")
             
-            # if epoch == 20:
-            #     if avg_val_loss > 0.012:
-            #         break
+            if epoch == 20:
+                if avg_val_loss > 0.006:
+                    break
 
 wandb.agent(sweep_id, function=train)
