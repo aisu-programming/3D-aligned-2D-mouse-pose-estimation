@@ -15,7 +15,7 @@ dataset/
 │   ├── MARS_front_00001.txt
 """
 # Constants
-MARGIN = 25
+MARGIN = 30
 CLASS_MAPPING = {"black": 0, "white": 1}  # Map "black" to 0, "white" to 1
 TOP = "top"
 FRONT = "front"

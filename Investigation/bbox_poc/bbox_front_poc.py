@@ -55,7 +55,7 @@ try:
         draw.text((x + 5, y - 10), labels[i], fill="white", font=font)
 
     # Calculate bounding box with margin
-    MARGIN = 25
+    MARGIN = 30
     x_min, y_min = min(coords_black["x"]) - MARGIN, min(coords_black["y"]) - MARGIN
     x_max, y_max = max(coords_black["x"]) + MARGIN, max(coords_black["y"]) + MARGIN
 
