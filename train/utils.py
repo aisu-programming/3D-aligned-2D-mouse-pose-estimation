@@ -139,3 +139,50 @@ class InfoNCELoss(torch.nn.Module):
                 loss += self.criterion(logits, labels)
 
         return loss
+
+
+class NTXentLoss(torch.nn.Module):
+    def __init__(self, temperature=0.5, device="cpu"):
+        super(NTXentLoss, self).__init__()
+        self.temperature = temperature
+        self.device = device
+        self.criterion = torch.nn.CrossEntropyLoss()
+
+    def forward(self, z1_list: list[torch.Tensor], z2_list: list[torch.Tensor]):
+        assert len(z1_list) == len(z2_list)
+
+        loss = None
+        for z1, z2 in zip(z1_list, z2_list):
+            batch_size = z1.size(0)
+
+            # Flatten and normalize embeddings
+            z1 = z1.view(batch_size, -1)  # (batch_size, c * w * h)
+            z2 = z2.view(batch_size, -1)  # (batch_size, c * w * h)
+            z1 = torch.nn.functional.normalize(z1, dim=1)  # Normalize (batch_size, c * w * h)
+            z2 = torch.nn.functional.normalize(z2, dim=1)  # Normalize (batch_size, c * w * h)
+
+            # Concatenate z1 and z2 for similarity computation
+            z_cat = torch.cat([z1, z2], dim=0)  # (2 * batch_size, c * w * h)
+
+            # Compute similarity matrix
+            similarity_matrix = torch.matmul(z_cat, z_cat.T)  # (2 * batch_size, 2 * batch_size)
+            similarity_matrix = similarity_matrix / self.temperature
+
+            # Mask for positive pairs (diagonal offsets)
+            labels = torch.cat([torch.arange(batch_size), torch.arange(batch_size)]).to(self.device)  # (2 * batch_size)
+
+            # Exclude self-similarity
+            mask = torch.eye(2 * batch_size, device=self.device).bool()
+            similarity_matrix = similarity_matrix.masked_fill(mask, float('-inf'))
+
+            # Compute the loss
+            if loss is None:
+                loss = self.criterion(similarity_matrix, labels)
+            else:
+                loss += self.criterion(similarity_matrix, labels)
+
+        return loss
+
+def multi_view_consistency_loss(keypoints_front, keypoints_top):
+    """Loss to align keypoints between views."""
+    return F.mse_loss(keypoints_front, keypoints_top)
